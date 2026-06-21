@@ -3,49 +3,138 @@ package handler
 import (
 	"github.com/go-chi/chi/v5"
 
-	"github.com/FIFSAK/saubala-back/internal/config"
-	restHandler "github.com/FIFSAK/saubala-back/internal/handler/rest"
+	"github.com/FIFSAK/saubala-back/internal/handler/rest"
+	"github.com/FIFSAK/saubala-back/internal/middleware"
+	"github.com/FIFSAK/saubala-back/internal/repository"
 	"github.com/FIFSAK/saubala-back/internal/service"
+	"github.com/FIFSAK/saubala-back/pkg/auth"
 )
 
+// Dependencies are the inputs required to build the HTTP handlers.
 type Dependencies struct {
-	Configs  *config.Configs
-	Services *service.Services
+	Services     *service.Services
+	Repositories *repository.Repositories
+	TokenManager *auth.TokenManager
 }
 
+// Configuration mutates the Handlers aggregate during construction.
 type Configuration func(h *Handlers) error
 
+// Handlers is the aggregate of all REST handlers.
 type Handlers struct {
-	dependencies Dependencies
-	Shipment     *restHandler.ShipmentHandler
+	deps Dependencies
+
+	Auth     *rest.AuthHandler
+	User     *rest.UserHandler
+	Brand    *rest.BrandHandler
+	Position *rest.PositionHandler
+	Receipt  *rest.ReceiptHandler
+	Contract *rest.ContractHandler
+	Release  *rest.ReleaseHandler
 }
 
-func New(d Dependencies, configs ...Configuration) (h *Handlers, err error) {
-	h = &Handlers{
-		dependencies: d,
-	}
-
+// New builds the handlers aggregate from the given options.
+func New(d Dependencies, configs ...Configuration) (*Handlers, error) {
+	h := &Handlers{deps: d}
 	for _, cfg := range configs {
-		if err = cfg(h); err != nil {
-			return
+		if err := cfg(h); err != nil {
+			return nil, err
 		}
 	}
-
-	return
+	return h, nil
 }
 
-func WithShipmentHandler() Configuration {
+func WithAuthHandler() Configuration {
 	return func(h *Handlers) error {
-		h.Shipment = restHandler.NewShipmentHandler(h.dependencies.Services.Shipment)
+		h.Auth = rest.NewAuthHandler(h.deps.Services.Auth)
 		return nil
 	}
 }
 
-// RegisterHTTP mounts all handlers under the versioned /api/v1 group.
+func WithUserHandler() Configuration {
+	return func(h *Handlers) error {
+		h.User = rest.NewUserHandler(h.deps.Services.User)
+		return nil
+	}
+}
+
+func WithBrandHandler() Configuration {
+	return func(h *Handlers) error {
+		h.Brand = rest.NewBrandHandler(h.deps.Services.Brand)
+		return nil
+	}
+}
+
+func WithPositionHandler() Configuration {
+	return func(h *Handlers) error {
+		h.Position = rest.NewPositionHandler(h.deps.Services.Position)
+		return nil
+	}
+}
+
+func WithReceiptHandler() Configuration {
+	return func(h *Handlers) error {
+		h.Receipt = rest.NewReceiptHandler(h.deps.Services.Receipt)
+		return nil
+	}
+}
+
+func WithContractHandler() Configuration {
+	return func(h *Handlers) error {
+		h.Contract = rest.NewContractHandler(h.deps.Services.Contract)
+		return nil
+	}
+}
+
+func WithReleaseHandler() Configuration {
+	return func(h *Handlers) error {
+		h.Release = rest.NewReleaseHandler(h.deps.Services.Release)
+		return nil
+	}
+}
+
+// RegisterHTTP mounts all routes under /api/v1, applying authentication to every
+// route except login, and the admin guard to user-management routes.
 func (h *Handlers) RegisterHTTP(r chi.Router) {
+	authenticate := middleware.Authenticator(h.deps.TokenManager, h.deps.Repositories.User)
+
 	r.Route("/api/v1", func(r chi.Router) {
-		if h.Shipment != nil {
-			h.Shipment.Register(r)
+		// Public routes.
+		if h.Auth != nil {
+			r.Post("/auth/login", h.Auth.Login)
 		}
+
+		// Authenticated routes.
+		r.Group(func(r chi.Router) {
+			r.Use(authenticate)
+
+			if h.Auth != nil {
+				r.Get("/auth/me", h.Auth.Me)
+			}
+
+			// User management is restricted to admin-capable users.
+			if h.User != nil {
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireAdmin)
+					h.User.Register(r)
+				})
+			}
+
+			if h.Brand != nil {
+				h.Brand.Register(r)
+			}
+			if h.Position != nil {
+				h.Position.Register(r)
+			}
+			if h.Receipt != nil {
+				h.Receipt.Register(r)
+			}
+			if h.Contract != nil {
+				h.Contract.Register(r)
+			}
+			if h.Release != nil {
+				h.Release.Register(r)
+			}
+		})
 	})
 }

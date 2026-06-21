@@ -11,35 +11,39 @@ import (
 	"github.com/kelseyhightower/envconfig"
 )
 
-const (
-	defaultAppMode    = "dev"
-	defaultAppPort    = ":80"
-	defaultAppHost    = "http://localhost:80"
-	defaultAppPath    = "/"
-	defaultAppTimeout = 60 * time.Second
-	defaultHTTPPort   = ":8080"
-)
-
+// Configs is the root configuration aggregate for the application.
 type Configs struct {
-	APP   AppConfig
-	HTTP  HTTPConfig
-	Store StoreConfig
+	APP        AppConfig
+	HTTP       HTTPConfig
+	Mongo      MongoConfig
+	JWT        JWTConfig
+	SuperAdmin SuperAdminConfig
 }
 
 type AppConfig struct {
-	Mode    string `required:"true"`
-	Port    string
-	Host    string
-	Path    string
-	Timeout time.Duration
+	Mode    string        `default:"dev"`
+	Port    string        `default:":80"`
+	Path    string        `default:"/api/v1"`
+	Timeout time.Duration `default:"60s"`
 }
 
 type HTTPConfig struct {
 	Port string `default:":8080"`
 }
 
-type StoreConfig struct {
-	DSN string
+type MongoConfig struct {
+	URI string `envconfig:"URI" default:"mongodb://localhost:27017"`
+	DB  string `envconfig:"DB" default:"saubala"`
+}
+
+type JWTConfig struct {
+	Secret    string        `envconfig:"SECRET" default:"change-me"`
+	AccessTTL time.Duration `envconfig:"ACCESS_TTL" default:"24h"`
+}
+
+type SuperAdminConfig struct {
+	Email    string `envconfig:"EMAIL" default:"admin@saubala.kz"`
+	Password string `envconfig:"PASSWORD" default:"change-me"`
 }
 
 func New() (*Configs, error) {
@@ -65,30 +69,15 @@ func New() (*Configs, error) {
 		logStructured("info", "env_file_missing", map[string]interface{}{"file": envPath})
 	}
 
-	cfg.APP = AppConfig{
-		Mode:    defaultAppMode,
-		Port:    defaultAppPort,
-		Host:    defaultAppHost,
-		Path:    defaultAppPath,
-		Timeout: defaultAppTimeout,
-	}
-
-	cfg.HTTP = HTTPConfig{
-		Port: defaultHTTPPort,
-	}
-
 	targets := map[string]interface{}{
-		"APP":    &cfg.APP,
-		"HTTP":   &cfg.HTTP,
-		"SQLITE": &cfg.Store,
+		"APP":        &cfg.APP,
+		"HTTP":       &cfg.HTTP,
+		"MONGO":      &cfg.Mongo,
+		"JWT":        &cfg.JWT,
+		"SUPERADMIN": &cfg.SuperAdmin,
 	}
 
 	for p, target := range targets {
-		if target == nil {
-			logStructured("error", "missing_target", map[string]interface{}{"prefix": p})
-			return cfg, fmt.Errorf("internal error: missing target for prefix %q", p)
-		}
-
 		if procErr := envconfig.Process(p, target); procErr != nil {
 			logStructured("error", "env_process", map[string]interface{}{"prefix": p, "error": procErr.Error()})
 			return cfg, fmt.Errorf("failed to process env for %s: %w", p, procErr)

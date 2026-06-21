@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"time"
 
 	"go.uber.org/zap"
@@ -9,36 +10,41 @@ import (
 	"github.com/FIFSAK/saubala-back/internal/handler"
 	"github.com/FIFSAK/saubala-back/internal/repository"
 	"github.com/FIFSAK/saubala-back/internal/service"
+	"github.com/FIFSAK/saubala-back/pkg/auth"
 	"github.com/FIFSAK/saubala-back/pkg/server"
+	"github.com/FIFSAK/saubala-back/pkg/store"
 )
 
-const (
-	dbStartupDelay = time.Second
-)
+const startupTimeout = 30 * time.Second
 
 func initApp(logger *zap.Logger) (*App, error) {
 	app := &App{logger: logger}
+
+	ctx, cancel := context.WithTimeout(context.Background(), startupTimeout)
+	defer cancel()
 
 	if err := app.loadConfiguration(); err != nil {
 		return nil, err
 	}
 
-	if err := app.initializeRepositories(); err != nil {
+	app.tokenManager = auth.NewTokenManager(app.configs.JWT.Secret, app.configs.JWT.AccessTTL)
+
+	if err := app.initializeRepositories(ctx); err != nil {
 		return nil, err
 	}
 
-	if err := app.initializeServices(); err != nil {
-		app.cleanup()
+	if err := app.initializeServices(ctx); err != nil {
+		app.cleanup(ctx)
 		return nil, err
 	}
 
 	if err := app.initializeServers(); err != nil {
-		app.cleanup()
+		app.cleanup(ctx)
 		return nil, err
 	}
 
 	if err := app.initializeHandlers(); err != nil {
-		app.cleanup()
+		app.cleanup(ctx)
 		return nil, err
 	}
 
@@ -56,21 +62,24 @@ func (app *App) loadConfiguration() error {
 	app.logger.Info("configuration loaded",
 		zap.String("mode", configs.APP.Mode),
 		zap.String("http_port", configs.HTTP.Port),
+		zap.String("mongo_db", configs.Mongo.DB),
 	)
-
 	return nil
 }
 
-func (app *App) initializeRepositories() error {
-	app.logger.Info("initializing repositories",
-		zap.Duration("db startup delay", dbStartupDelay))
-	time.Sleep(dbStartupDelay)
+func (app *App) initializeRepositories(ctx context.Context) error {
+	app.logger.Info("connecting to mongodb", zap.String("uri", app.configs.Mongo.URI))
 
-	configs := []repository.Configuration{
-		repository.WithSQLiteStore(app.configs.Store.DSN),
+	mongo, err := store.NewMongo(ctx, app.configs.Mongo.URI, app.configs.Mongo.DB)
+	if err != nil {
+		app.logger.Error("mongo connect error", zap.Error(err))
+		return err
 	}
+	app.mongo = mongo
 
-	repositories, err := repository.New(configs...)
+	repositories, err := repository.New(
+		repository.WithMongoStore(ctx, mongo),
+	)
 	if err != nil {
 		app.logger.Error("repository init error", zap.Error(err))
 		return err
@@ -81,20 +90,32 @@ func (app *App) initializeRepositories() error {
 	return nil
 }
 
-func (app *App) initializeServices() error {
+func (app *App) initializeServices(ctx context.Context) error {
 	services, err := service.New(
 		service.Dependencies{
 			Repositories: app.repositories,
-			Configs:      app.configs,
+			TokenManager: app.tokenManager,
 		},
-		service.WithShipmentService(),
+		service.WithAuthService(),
+		service.WithUserService(),
+		service.WithBrandService(),
+		service.WithPositionService(),
+		service.WithReceiptService(),
+		service.WithContractService(),
+		service.WithReleaseService(),
 	)
 	if err != nil {
 		app.logger.Error("service init error", zap.Error(err))
 		return err
 	}
-
 	app.services = services
+
+	// Seed the super administrator account if it does not exist yet.
+	if err := services.User.EnsureSuperAdmin(ctx, app.configs.SuperAdmin.Email, app.configs.SuperAdmin.Password); err != nil {
+		app.logger.Error("super admin seed error", zap.Error(err))
+		return err
+	}
+
 	app.logger.Info("services initialized")
 	return nil
 }
@@ -116,10 +137,17 @@ func (app *App) initializeServers() error {
 func (app *App) initializeHandlers() error {
 	handlers, err := handler.New(
 		handler.Dependencies{
-			Configs:  app.configs,
-			Services: app.services,
+			Services:     app.services,
+			Repositories: app.repositories,
+			TokenManager: app.tokenManager,
 		},
-		handler.WithShipmentHandler(),
+		handler.WithAuthHandler(),
+		handler.WithUserHandler(),
+		handler.WithBrandHandler(),
+		handler.WithPositionHandler(),
+		handler.WithReceiptHandler(),
+		handler.WithContractHandler(),
+		handler.WithReleaseHandler(),
 	)
 	if err != nil {
 		app.logger.Error("handler init error", zap.Error(err))
@@ -133,9 +161,12 @@ func (app *App) initializeHandlers() error {
 	return nil
 }
 
-func (app *App) cleanup() {
+func (app *App) cleanup(ctx context.Context) {
 	if app.repositories != nil {
-		app.repositories.Close()
-		app.logger.Info("repositories cleanup complete")
+		if err := app.repositories.Close(ctx); err != nil {
+			app.logger.Error("repositories cleanup error", zap.Error(err))
+		} else {
+			app.logger.Info("repositories cleanup complete")
+		}
 	}
 }

@@ -1,41 +1,108 @@
 package service
 
 import (
-	"github.com/FIFSAK/saubala-back/internal/config"
 	"github.com/FIFSAK/saubala-back/internal/repository"
-	shipmentSvc "github.com/FIFSAK/saubala-back/internal/service/shipment"
+	authsvc "github.com/FIFSAK/saubala-back/internal/service/auth"
+	brandsvc "github.com/FIFSAK/saubala-back/internal/service/brand"
+	contractsvc "github.com/FIFSAK/saubala-back/internal/service/contract"
+	positionsvc "github.com/FIFSAK/saubala-back/internal/service/position"
+	receiptsvc "github.com/FIFSAK/saubala-back/internal/service/receipt"
+	releasesvc "github.com/FIFSAK/saubala-back/internal/service/release"
+	usersvc "github.com/FIFSAK/saubala-back/internal/service/user"
+	"github.com/FIFSAK/saubala-back/pkg/auth"
 )
 
+// Dependencies are the inputs required to build the service aggregate.
 type Dependencies struct {
 	Repositories *repository.Repositories
-	Configs      *config.Configs
+	TokenManager *auth.TokenManager
 }
 
+// Configuration mutates the Services aggregate during construction.
 type Configuration func(s *Services) error
 
+// Services is the aggregate of all application services.
 type Services struct {
-	dependencies Dependencies
-	Shipment     shipmentSvc.Service
+	deps Dependencies
+
+	Auth     *authsvc.Service
+	User     *usersvc.Service
+	Brand    *brandsvc.Service
+	Position *positionsvc.Service
+	Receipt  *receiptsvc.Service
+	Contract *contractsvc.Service
+	Release  *releasesvc.Service
 }
 
-func New(dependencies Dependencies, configs ...Configuration) (s *Services, err error) {
-	s = &Services{
-		dependencies: dependencies,
-	}
-
+// New builds the services aggregate from the given options.
+func New(deps Dependencies, configs ...Configuration) (*Services, error) {
+	s := &Services{deps: deps}
 	for _, cfg := range configs {
-		if err = cfg(s); err != nil {
+		if err := cfg(s); err != nil {
 			return nil, err
 		}
 	}
-
 	return s, nil
 }
 
-func WithShipmentService() Configuration {
+func WithAuthService() Configuration {
 	return func(s *Services) error {
-		s.Shipment = shipmentSvc.NewShipmentService(
-			s.dependencies.Repositories.Shipment,
+		s.Auth = authsvc.NewService(s.deps.Repositories.User, s.deps.TokenManager)
+		return nil
+	}
+}
+
+func WithUserService() Configuration {
+	return func(s *Services) error {
+		s.User = usersvc.NewService(s.deps.Repositories.User)
+		return nil
+	}
+}
+
+func WithBrandService() Configuration {
+	return func(s *Services) error {
+		s.Brand = brandsvc.NewService(s.deps.Repositories.Brand, s.deps.Repositories.Position)
+		return nil
+	}
+}
+
+func WithPositionService() Configuration {
+	return func(s *Services) error {
+		s.Position = positionsvc.NewService(
+			s.deps.Repositories.Position,
+			s.deps.Repositories.Brand,
+			s.deps.Repositories.Receipt,
+			s.deps.Repositories.Release,
+			s.deps.Repositories.Contract,
+		)
+		return nil
+	}
+}
+
+func WithReceiptService() Configuration {
+	return func(s *Services) error {
+		s.Receipt = receiptsvc.NewService(s.deps.Repositories.Receipt, s.deps.Repositories.Position)
+		return nil
+	}
+}
+
+func WithContractService() Configuration {
+	return func(s *Services) error {
+		s.Contract = contractsvc.NewService(
+			s.deps.Repositories.Contract,
+			s.deps.Repositories.Position,
+			s.deps.Repositories.Release,
+		)
+		return nil
+	}
+}
+
+func WithReleaseService() Configuration {
+	return func(s *Services) error {
+		s.Release = releasesvc.NewService(
+			s.deps.Repositories.Release,
+			s.deps.Repositories.Contract,
+			s.deps.Repositories.Position,
 		)
 		return nil
 	}

@@ -1,4 +1,4 @@
-.PHONY: build run client test vet
+.PHONY: build run test vet tidy
 
 build:
 	go build ./...
@@ -6,11 +6,11 @@ build:
 run:
 	go run ./cmd/saubala-back
 
-client:
-	go run ./cmd/client
-
 test:
 	go test ./...
 
 vet:
 	go vet ./...
+
+tidy:
+	go mod tidy

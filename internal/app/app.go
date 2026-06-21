@@ -9,27 +9,31 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/FIFSAK/saubala-back/internal/config"
-
 	"go.uber.org/zap"
 
+	"github.com/FIFSAK/saubala-back/internal/config"
 	"github.com/FIFSAK/saubala-back/internal/handler"
 	"github.com/FIFSAK/saubala-back/internal/repository"
 	"github.com/FIFSAK/saubala-back/internal/service"
+	"github.com/FIFSAK/saubala-back/pkg/auth"
 	"github.com/FIFSAK/saubala-back/pkg/log"
 	"github.com/FIFSAK/saubala-back/pkg/server"
+	"github.com/FIFSAK/saubala-back/pkg/store"
 )
 
+// App is the composition root holding all wired components.
 type App struct {
-	logger         *zap.Logger
-	configs        *config.Configs
-	repositories   *repository.Repositories
-	services       *service.Services
-	servers        *server.Servers
-	handlers       *handler.Handlers
-	tracerShutdown func(context.Context) error
+	logger       *zap.Logger
+	configs      *config.Configs
+	mongo        *store.Mongo
+	tokenManager *auth.TokenManager
+	repositories *repository.Repositories
+	services     *service.Services
+	servers      *server.Servers
+	handlers     *handler.Handlers
 }
 
+// Run builds the application, starts the servers and blocks until shutdown.
 func Run() {
 	logger := log.GetLogger()
 	app, err := initApp(logger)
@@ -96,19 +100,14 @@ func (app *App) waitForShutdown(timeout time.Duration) {
 func (app *App) shutdown() {
 	app.logger.Info("running cleanup tasks")
 
-	if app.tracerShutdown != nil {
+	if app.repositories != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := app.tracerShutdown(ctx); err != nil {
-			app.logger.Error("tracer shutdown error", zap.Error(err))
+		if err := app.repositories.Close(ctx); err != nil {
+			app.logger.Error("repositories close error", zap.Error(err))
 		} else {
-			app.logger.Info("tracer stopped")
+			app.logger.Info("repositories closed")
 		}
-	}
-
-	if app.repositories != nil {
-		app.repositories.Close()
-		app.logger.Info("repositories closed")
 	}
 
 	if app.logger != nil {
