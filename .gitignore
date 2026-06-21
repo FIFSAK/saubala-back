@@ -23,3 +23,11 @@ go.work.sum
 
 # env file
 .env
+
+# local sqlite database
+*.db
+*.db-shm
+*.db-wal
+
+# runtime log output (see pkg/log: OutputPaths includes service.log)
+*.log
