@@ -18,9 +18,10 @@ import (
 type Option func(*Servers) error
 
 type Servers struct {
-	httpServer *http.Server
-	httpListen net.Listener
-	router     chi.Router
+	httpServer  *http.Server
+	httpListen  net.Listener
+	router      chi.Router
+	corsOrigins []string
 }
 
 func NewServer(opts ...Option) (*Servers, error) {
@@ -79,6 +80,7 @@ func WithHTTP(addr string) Option {
 		}
 
 		r := chi.NewRouter()
+		r.Use(corsMiddleware(s.corsOrigins))
 		r.Use(middleware.RequestID)
 		r.Use(middleware.RealIP)
 		r.Use(requestLogger)
@@ -97,6 +99,47 @@ func WithHTTP(addr string) Option {
 			ReadHeaderTimeout: 10 * time.Second,
 		}
 		return nil
+	}
+}
+
+// WithCORS configures the set of browser origins allowed to call the API.
+// A single "*" entry (or an empty list) allows any origin.
+func WithCORS(origins []string) Option {
+	return func(s *Servers) error {
+		s.corsOrigins = origins
+		return nil
+	}
+}
+
+// corsMiddleware emits CORS headers and answers preflight (OPTIONS) requests.
+// The matched origin is echoed back (rather than "*") so credentialed requests
+// keep working if cookies are ever introduced.
+func corsMiddleware(allowed []string) func(http.Handler) http.Handler {
+	allowAny := len(allowed) == 0
+	set := make(map[string]bool, len(allowed))
+	for _, o := range allowed {
+		if o == "*" {
+			allowAny = true
+		}
+		set[o] = true
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+			if origin != "" && (allowAny || set[origin]) {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Add("Vary", "Origin")
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+				w.Header().Set("Access-Control-Max-Age", "600")
+			}
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
 	}
 }
 

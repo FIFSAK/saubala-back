@@ -1,0 +1,76 @@
+name: saubala
+
+# Локальный стек: MongoDB + бэкенд (+ опциональные сид и фронтенд).
+#   docker compose up -d --build              # mongo + backend
+#   docker compose --profile seed run --rm seed   # наполнить демо-данными
+#   docker compose --profile full up -d --build   # + фронтенд на :3000
+#
+# ВНИМАНИЕ: значения ниже — для локальной разработки. В проде задайте свои
+# JWT_SECRET / SUPERADMIN_PASSWORD / CORS_ALLOWED_ORIGINS (через override-файл
+# или секреты окружения).
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      APP_MODE: prod
+      HTTP_PORT: ":8080"
+      APP_PATH: "/api/v1"
+      MONGO_URI: "mongodb://mongo:27017"
+      MONGO_DB: "saubala"
+      JWT_SECRET: "dev-saubala-secret-change-in-prod"
+      JWT_ACCESS_TTL: "24h"
+      SUPERADMIN_EMAIL: "admin@saubala.kz"
+      SUPERADMIN_PASSWORD: "admin12345"
+      CORS_ALLOWED_ORIGINS: "http://localhost:3000"
+    ports:
+      - "8080:8080"
+
+  # Разовое наполнение демо-данными (бренды, позиции, договоры, отпуск).
+  seed:
+    build: .
+    profiles: ["seed"]
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      MONGO_URI: "mongodb://mongo:27017"
+      MONGO_DB: "saubala"
+      SUPERADMIN_EMAIL: "admin@saubala.kz"
+      SUPERADMIN_PASSWORD: "admin12345"
+      JWT_SECRET: "dev-saubala-secret-change-in-prod"
+    entrypoint: ["/app/seed", "-reset"]
+
+  # Фронтенд из соседнего репозитория ../saubala-front (профиль full).
+  frontend:
+    build:
+      context: ../saubala-front
+    profiles: ["full"]
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      # Адрес, по которому БРАУЗЕР обращается к API (порт хоста, не сети docker).
+      NUXT_PUBLIC_API_BASE: "http://localhost:8080/api/v1"
+    ports:
+      - "3000:3000"
+
+volumes:
+  mongo-data:

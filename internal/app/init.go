@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -121,7 +122,15 @@ func (app *App) initializeServices(ctx context.Context) error {
 }
 
 func (app *App) initializeServers() error {
+	var origins []string
+	for _, o := range strings.Split(app.configs.CORS.AllowedOrigins, ",") {
+		if t := strings.TrimSpace(o); t != "" {
+			origins = append(origins, t)
+		}
+	}
+
 	servers, err := server.NewServer(
+		server.WithCORS(origins),
 		server.WithHTTP(app.configs.HTTP.Port),
 	)
 	if err != nil {

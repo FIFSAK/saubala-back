@@ -15,6 +15,7 @@ import (
 type Configs struct {
 	APP        AppConfig
 	HTTP       HTTPConfig
+	CORS       CORSConfig
 	Mongo      MongoConfig
 	JWT        JWTConfig
 	SuperAdmin SuperAdminConfig
@@ -29,6 +30,13 @@ type AppConfig struct {
 
 type HTTPConfig struct {
 	Port string `default:":8080"`
+}
+
+// CORSConfig holds the allowed browser origins. A single "*" allows any origin
+// (suitable for local development). In production set a comma-separated allowlist,
+// e.g. CORS_ALLOWED_ORIGINS=https://app.saubala.kz.
+type CORSConfig struct {
+	AllowedOrigins string `envconfig:"ALLOWED_ORIGINS" default:"*"`
 }
 
 type MongoConfig struct {
@@ -72,6 +80,7 @@ func New() (*Configs, error) {
 	targets := map[string]interface{}{
 		"APP":        &cfg.APP,
 		"HTTP":       &cfg.HTTP,
+		"CORS":       &cfg.CORS,
 		"MONGO":      &cfg.Mongo,
 		"JWT":        &cfg.JWT,
 		"SUPERADMIN": &cfg.SuperAdmin,

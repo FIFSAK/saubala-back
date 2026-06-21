@@ -1,0 +1,25 @@
+# VCS / IDE
+.git
+.github
+.idea
+.vscode
+
+# Local config & secrets
+.env
+.env.*
+!.env.dist
+
+# Artifacts
+*.log
+service.log
+*.exe
+*.db
+*.db-shm
+*.db-wal
+
+# Docker / docs
+Dockerfile
+.dockerignore
+docker-compose.yml
+*.md
+ТЗ
