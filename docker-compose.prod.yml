@@ -1,0 +1,48 @@
+name: saubala
+
+# Продакшен-стек: образ бэкенда ТЯНЕТСЯ из GHCR (не билдится на сервере).
+# Лежит на сервере рядом с .env, в который CI/деплой не лезет.
+#
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Значения берутся из .env рядом с этим файлом. Обязательные (без дефолта,
+# контейнер не стартует без них): BACKEND_IMAGE, JWT_SECRET,
+# SUPERADMIN_PASSWORD, CORS_ALLOWED_ORIGINS.
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    # Полный тег образа из GHCR, напр. ghcr.io/<owner>/saubala-back:latest
+    image: ${BACKEND_IMAGE:?set BACKEND_IMAGE in .env}
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      APP_MODE: prod
+      HTTP_PORT: ":8080"
+      APP_PATH: "/api/v1"
+      MONGO_URI: "mongodb://mongo:27017"
+      MONGO_DB: "saubala"
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_ACCESS_TTL: "24h"
+      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-admin@saubala.kz}
+      SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD:?set SUPERADMIN_PASSWORD in .env}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?set CORS_ALLOWED_ORIGINS in .env}
+    ports:
+      - "8080:8080"
+
+volumes:
+  mongo-data:
