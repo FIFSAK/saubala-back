@@ -18,7 +18,6 @@ type positionDoc struct {
 	Name          string    `bson:"name"`
 	BrandID       string    `bson:"brand_id"`
 	ContractName  string    `bson:"contract_name"`
-	SupplierName  string    `bson:"supplier_name"`
 	ExpiryDate    time.Time `bson:"expiry_date"`
 	LotNumber     string    `bson:"lot_number"`
 	PurchasePrice int64     `bson:"purchase_price"`
@@ -34,7 +33,6 @@ func toPositionDoc(p *position.Position) positionDoc {
 		Name:          p.Name,
 		BrandID:       p.BrandID,
 		ContractName:  p.ContractName,
-		SupplierName:  p.SupplierName,
 		ExpiryDate:    p.ExpiryDate,
 		LotNumber:     p.LotNumber,
 		PurchasePrice: p.PurchasePrice,
@@ -51,7 +49,6 @@ func (d positionDoc) toDomain() *position.Position {
 		Name:          d.Name,
 		BrandID:       d.BrandID,
 		ContractName:  d.ContractName,
-		SupplierName:  d.SupplierName,
 		ExpiryDate:    d.ExpiryDate,
 		LotNumber:     d.LotNumber,
 		PurchasePrice: d.PurchasePrice,
@@ -104,7 +101,6 @@ func (r *PositionRepository) Update(ctx context.Context, p *position.Position) e
 		"name":           p.Name,
 		"brand_id":       p.BrandID,
 		"contract_name":  p.ContractName,
-		"supplier_name":  p.SupplierName,
 		"expiry_date":    p.ExpiryDate,
 		"lot_number":     p.LotNumber,
 		"purchase_price": p.PurchasePrice,
@@ -138,7 +134,6 @@ func (r *PositionRepository) List(ctx context.Context, f position.Filter) ([]pos
 		filter["$or"] = bson.A{
 			bson.M{"name": rx},
 			bson.M{"contract_name": rx},
-			bson.M{"supplier_name": rx},
 			bson.M{"lot_number": rx},
 		}
 	}

@@ -162,43 +162,43 @@ func run(reset bool, password string) error {
 	pos := map[string]string{}
 	pos["neocate"] = s.position(positionsvc.CreateInput{
 		Name: "Neocate LCP, банка 400 г", BrandID: bNutricia,
-		ContractName: "Смесь аминокислотная Neocate LCP", SupplierName: "Nutricia Kazakhstan",
+		ContractName: "Смесь аминокислотная Neocate LCP",
 		ExpiryDate: now.AddDate(1, 0, 0), LotNumber: "NEO-2026-014",
 		PurchasePrice: tg(18500), Quantity: 120, MassGrams: 400,
 	})
 	pos["pepti"] = s.position(positionsvc.CreateInput{
 		Name: "Nutrilon Пепти Гастро, 450 г", BrandID: bNutricia,
-		ContractName: "Смесь Nutrilon Пепти Гастро", SupplierName: "Nutricia Kazakhstan",
+		ContractName: "Смесь Nutrilon Пепти Гастро",
 		ExpiryDate: now.AddDate(0, 8, 0), LotNumber: "NTR-PG-0451",
 		PurchasePrice: tg(9800), Quantity: 80, MassGrams: 450,
 	})
 	pos["alfamino"] = s.position(positionsvc.CreateInput{
 		Name: "Alfamino, 400 г", BrandID: bNestle,
-		ContractName: "Смесь аминокислотная Alfamino", SupplierName: "Nestlé Kazakhstan",
+		ContractName: "Смесь аминокислотная Alfamino",
 		ExpiryDate: now.AddDate(1, 1, 0), LotNumber: "ALF-400-22",
 		PurchasePrice: tg(21000), Quantity: 60, MassGrams: 400,
 	})
 	pos["pediasure"] = s.position(positionsvc.CreateInput{
 		Name: "PediaSure со вкусом ванили, 400 г", BrandID: bAbbott,
-		ContractName: "Питание энтеральное PediaSure", SupplierName: "Abbott Logistics",
+		ContractName: "Питание энтеральное PediaSure",
 		ExpiryDate: now.AddDate(0, 5, 0), LotNumber: "PS-VAN-400",
 		PurchasePrice: tg(6500), Quantity: 200, MassGrams: 400,
 	})
 	pos["similac"] = s.position(positionsvc.CreateInput{
 		Name: "Similac Изомил, 375 г", BrandID: bAbbott,
-		ContractName: "Смесь Similac Изомил (соевая)", SupplierName: "Abbott Logistics",
+		ContractName: "Смесь Similac Изомил (соевая)",
 		ExpiryDate: now.AddDate(0, 0, 25), LotNumber: "SIM-ISO-375",
 		PurchasePrice: tg(7200), Quantity: 40, MassGrams: 375,
 	})
 	pos["humana"] = s.position(positionsvc.CreateInput{
 		Name: "Humana SL (соевая), 500 г", BrandID: bHumana,
-		ContractName: "Смесь Humana SL", SupplierName: "Humana GmbH",
+		ContractName: "Смесь Humana SL",
 		ExpiryDate: now.AddDate(0, 0, 12), LotNumber: "HUM-SL-500",
 		PurchasePrice: tg(5400), Quantity: 5, MassGrams: 500,
 	})
 	pos["nutrini"] = s.position(positionsvc.CreateInput{
 		Name: "Nutrini Energy Multi Fibre, 200 мл", BrandID: bNutricia,
-		ContractName: "Питание Nutrini Energy Multi Fibre", SupplierName: "Nutricia Kazakhstan",
+		ContractName: "Питание Nutrini Energy Multi Fibre",
 		ExpiryDate: now.AddDate(1, 5, 0), LotNumber: "NUT-EMF-200",
 		PurchasePrice: tg(1200), Quantity: 0, MassGrams: 200,
 	})
@@ -207,7 +207,7 @@ func run(reset bool, password string) error {
 	// --- extra receipt (restock) ---
 	if pos["pediasure"] != "" && pos["pepti"] != "" {
 		if _, err := svc.Receipt.Create(ctx, receiptsvc.CreateInput{
-			Date: now.AddDate(0, 0, -5), Supplier: "Abbott Logistics", DocumentNumber: "ТТН-3391",
+			Date: now.AddDate(0, 0, -5),
 			Note: "Плановая поставка", CreatedBy: admin.ID,
 			Lines: []receiptsvc.LineInput{
 				{PositionID: pos["pediasure"], Quantity: 100},

@@ -40,7 +40,7 @@ func queryTimePtr(r *http.Request, key string) (*time.Time, error) {
 	}
 	t, err := time.Parse(time.RFC3339, raw)
 	if err != nil {
-		return nil, web.BadRequest("invalid " + key + ": expected RFC3339 timestamp")
+		return nil, web.BadRequest("некорректный параметр " + key + ": ожидается дата в формате RFC3339")
 	}
 	t = t.UTC()
 	return &t, nil

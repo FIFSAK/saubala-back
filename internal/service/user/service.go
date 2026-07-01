@@ -36,7 +36,7 @@ type UpdateInput struct {
 func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.User, error) {
 	role := domain.Role(in.Role)
 	if !role.IsAssignable() {
-		return nil, web.BadRequest("role must be 'admin' or 'user'")
+		return nil, web.BadRequest("роль должна быть «admin» или «user»")
 	}
 	if err := domain.ValidatePassword(in.Password); err != nil {
 		return nil, web.BadRequest(err.Error())
@@ -55,7 +55,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.User, err
 
 	if err := s.users.Create(ctx, u); err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
-			return nil, web.Conflict("a user with this email already exists")
+			return nil, web.Conflict("пользователь с таким email уже существует")
 		}
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.User, err
 func (s *Service) Get(ctx context.Context, id string) (*domain.User, error) {
 	u, err := s.users.GetByID(ctx, id)
 	if err != nil {
-		return nil, mapNotFound(err, "user not found")
+		return nil, mapNotFound(err, "пользователь не найден")
 	}
 	return u, nil
 }
@@ -77,7 +77,7 @@ func (s *Service) List(ctx context.Context, f domain.Filter) ([]domain.User, int
 func (s *Service) Update(ctx context.Context, actor *domain.User, id string, in UpdateInput) (*domain.User, error) {
 	target, err := s.users.GetByID(ctx, id)
 	if err != nil {
-		return nil, mapNotFound(err, "user not found")
+		return nil, mapNotFound(err, "пользователь не найден")
 	}
 
 	if in.FullName != nil {
@@ -87,7 +87,7 @@ func (s *Service) Update(ctx context.Context, actor *domain.User, id string, in 
 	if in.Role != nil {
 		newRole := domain.Role(*in.Role)
 		if !newRole.IsAssignable() {
-			return nil, web.BadRequest("role must be 'admin' or 'user'")
+			return nil, web.BadRequest("роль должна быть «admin» или «user»")
 		}
 		if err := s.applyRoleChange(ctx, actor, target, newRole); err != nil {
 			return nil, err
@@ -106,12 +106,12 @@ func (s *Service) applyRoleChange(ctx context.Context, actor, target *domain.Use
 		return nil
 	}
 	if target.Role == domain.RoleSuperAdmin {
-		return web.Forbidden("the super administrator's role cannot be changed")
+		return web.Forbidden("роль супер-администратора нельзя изменить")
 	}
 	demoting := target.Role.IsAdmin() && !newRole.IsAdmin()
 	if demoting {
 		if actor != nil && actor.ID == target.ID {
-			return web.Forbidden("you cannot demote yourself")
+			return web.Forbidden("вы не можете понизить свою роль")
 		}
 		if err := s.ensureNotLastAdmin(ctx, target.ID); err != nil {
 			return err
@@ -124,7 +124,7 @@ func (s *Service) applyRoleChange(ctx context.Context, actor, target *domain.Use
 func (s *Service) Activate(ctx context.Context, id string) (*domain.User, error) {
 	target, err := s.users.GetByID(ctx, id)
 	if err != nil {
-		return nil, mapNotFound(err, "user not found")
+		return nil, mapNotFound(err, "пользователь не найден")
 	}
 	target.IsActive = true
 	if err := s.users.Update(ctx, target); err != nil {
@@ -136,13 +136,13 @@ func (s *Service) Activate(ctx context.Context, id string) (*domain.User, error)
 func (s *Service) Deactivate(ctx context.Context, actor *domain.User, id string) (*domain.User, error) {
 	target, err := s.users.GetByID(ctx, id)
 	if err != nil {
-		return nil, mapNotFound(err, "user not found")
+		return nil, mapNotFound(err, "пользователь не найден")
 	}
 	if target.Role == domain.RoleSuperAdmin {
-		return nil, web.Forbidden("the super administrator cannot be deactivated")
+		return nil, web.Forbidden("супер-администратора нельзя деактивировать")
 	}
 	if actor != nil && actor.ID == target.ID {
-		return nil, web.Forbidden("you cannot deactivate yourself")
+		return nil, web.Forbidden("вы не можете деактивировать себя")
 	}
 	if target.IsActive && target.Role.IsAdmin() {
 		if err := s.ensureNotLastAdmin(ctx, target.ID); err != nil {
@@ -160,11 +160,11 @@ func (s *Service) Deactivate(ctx context.Context, actor *domain.User, id string)
 func (s *Service) ResetPassword(ctx context.Context, actor *domain.User, id, newPassword string) error {
 	target, err := s.users.GetByID(ctx, id)
 	if err != nil {
-		return mapNotFound(err, "user not found")
+		return mapNotFound(err, "пользователь не найден")
 	}
 	// Only the super administrator may reset the super administrator's password.
 	if target.Role == domain.RoleSuperAdmin && (actor == nil || actor.Role != domain.RoleSuperAdmin) {
-		return web.Forbidden("only the super administrator can reset this password")
+		return web.Forbidden("только супер-администратор может сбросить этот пароль")
 	}
 	if err := domain.ValidatePassword(newPassword); err != nil {
 		return web.BadRequest(err.Error())
@@ -213,7 +213,7 @@ func (s *Service) ensureNotLastAdmin(ctx context.Context, excludeID string) erro
 		return err
 	}
 	if remaining == 0 {
-		return web.Conflict("cannot remove the last administrator")
+		return web.Conflict("нельзя удалить последнего администратора")
 	}
 	return nil
 }

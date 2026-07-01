@@ -45,7 +45,6 @@ type CreateInput struct {
 	Name          string
 	BrandID       string
 	ContractName  string
-	SupplierName  string
 	ExpiryDate    time.Time
 	LotNumber     string
 	PurchasePrice int64
@@ -60,7 +59,6 @@ type UpdateInput struct {
 	Name          *string
 	BrandID       *string
 	ContractName  *string
-	SupplierName  *string
 	ExpiryDate    *time.Time
 	LotNumber     *string
 	PurchasePrice *int64
@@ -68,7 +66,7 @@ type UpdateInput struct {
 }
 
 func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Position, error) {
-	p, err := domain.New(in.Name, in.BrandID, in.ContractName, in.SupplierName, in.LotNumber,
+	p, err := domain.New(in.Name, in.BrandID, in.ContractName, in.LotNumber,
 		in.ExpiryDate, in.PurchasePrice, in.Quantity, in.MassGrams)
 	if err != nil {
 		return nil, web.BadRequest(err.Error())
@@ -85,7 +83,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Position,
 	}
 
 	if opening > 0 {
-		rec, err := receipt.New(time.Now().UTC(), p.SupplierName, "", "opening balance", in.CreatedBy,
+		rec, err := receipt.New(time.Now().UTC(), "opening balance", in.CreatedBy,
 			[]receipt.Line{{PositionID: p.ID, Quantity: opening}})
 		if err != nil {
 			_ = s.positions.Delete(ctx, p.ID)
@@ -111,7 +109,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Position,
 func (s *Service) Get(ctx context.Context, id string) (*domain.Position, error) {
 	p, err := s.positions.GetByID(ctx, id)
 	if err != nil {
-		return nil, mapNotFound(err, "position not found")
+		return nil, mapNotFound(err, "позиция не найдена")
 	}
 	return p, nil
 }
@@ -123,12 +121,12 @@ func (s *Service) List(ctx context.Context, f domain.Filter) ([]domain.Position,
 func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*domain.Position, error) {
 	p, err := s.positions.GetByID(ctx, id)
 	if err != nil {
-		return nil, mapNotFound(err, "position not found")
+		return nil, mapNotFound(err, "позиция не найдена")
 	}
 
 	if in.Name != nil {
 		if *in.Name == "" {
-			return nil, web.BadRequest("position name is required")
+			return nil, web.BadRequest("название позиции обязательно")
 		}
 		p.Name = *in.Name
 	}
@@ -141,30 +139,27 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*domai
 	if in.ContractName != nil {
 		p.ContractName = *in.ContractName
 	}
-	if in.SupplierName != nil {
-		p.SupplierName = *in.SupplierName
-	}
 	if in.ExpiryDate != nil {
 		if in.ExpiryDate.IsZero() {
-			return nil, web.BadRequest("expiry_date is required")
+			return nil, web.BadRequest("срок годности обязателен")
 		}
 		p.ExpiryDate = in.ExpiryDate.UTC()
 	}
 	if in.LotNumber != nil {
 		if *in.LotNumber == "" {
-			return nil, web.BadRequest("lot_number is required")
+			return nil, web.BadRequest("номер партии обязателен")
 		}
 		p.LotNumber = *in.LotNumber
 	}
 	if in.PurchasePrice != nil {
 		if *in.PurchasePrice < 0 {
-			return nil, web.BadRequest("purchase_price must be >= 0")
+			return nil, web.BadRequest("цена закупки должна быть >= 0")
 		}
 		p.PurchasePrice = *in.PurchasePrice
 	}
 	if in.MassGrams != nil {
 		if *in.MassGrams < 0 {
-			return nil, web.BadRequest("mass_grams must be >= 0")
+			return nil, web.BadRequest("масса (г) должна быть >= 0")
 		}
 		p.MassGrams = *in.MassGrams
 	}
@@ -177,7 +172,7 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*domai
 
 func (s *Service) Delete(ctx context.Context, id string) error {
 	if _, err := s.positions.GetByID(ctx, id); err != nil {
-		return mapNotFound(err, "position not found")
+		return mapNotFound(err, "позиция не найдена")
 	}
 
 	recs, err := s.receipts.ListByPosition(ctx, id)
@@ -185,7 +180,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	if len(recs) > 0 {
-		return web.Conflict("position is referenced by receipts")
+		return web.Conflict("позиция используется в поступлениях")
 	}
 
 	rels, err := s.releases.ListByPosition(ctx, id)
@@ -193,7 +188,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	if len(rels) > 0 {
-		return web.Conflict("position is referenced by releases")
+		return web.Conflict("позиция используется в отгрузках")
 	}
 
 	refCount, err := s.contracts.CountByPosition(ctx, id)
@@ -201,7 +196,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	if refCount > 0 {
-		return web.Conflict("position is referenced by contracts")
+		return web.Conflict("позиция используется в договорах")
 	}
 
 	return s.positions.Delete(ctx, id)
@@ -211,7 +206,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 // position, ordered by date ascending.
 func (s *Service) Movements(ctx context.Context, id string) ([]domain.Movement, error) {
 	if _, err := s.positions.GetByID(ctx, id); err != nil {
-		return nil, mapNotFound(err, "position not found")
+		return nil, mapNotFound(err, "позиция не найдена")
 	}
 
 	recs, err := s.receipts.ListByPosition(ctx, id)
@@ -260,7 +255,7 @@ func (s *Service) Movements(ctx context.Context, id string) ([]domain.Movement, 
 func (s *Service) ensureBrandExists(ctx context.Context, brandID string) error {
 	if _, err := s.brands.GetByID(ctx, brandID); err != nil {
 		if errors.Is(err, store.ErrorNotFound) {
-			return web.BadRequest("brand does not exist")
+			return web.BadRequest("бренд не существует")
 		}
 		return err
 	}

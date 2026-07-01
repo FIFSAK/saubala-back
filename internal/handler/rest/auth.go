@@ -51,7 +51,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	u, ok := middleware.CurrentUser(r.Context())
 	if !ok {
-		web.WriteError(w, web.Unauthorized("authentication required"))
+		web.WriteError(w, web.Unauthorized("требуется аутентификация"))
 		return
 	}
 	web.JSON(w, http.StatusOK, toUserResponse(u))

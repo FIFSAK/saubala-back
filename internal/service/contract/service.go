@@ -87,7 +87,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Contract,
 	}
 	if err := s.contracts.Create(ctx, c); err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
-			return nil, web.Conflict("a contract with this number already exists")
+			return nil, web.Conflict("договор с таким номером уже существует")
 		}
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Contract,
 func (s *Service) Get(ctx context.Context, id string) (*domain.Contract, map[string]LineProgress, error) {
 	c, err := s.contracts.GetByID(ctx, id)
 	if err != nil {
-		return nil, nil, mapNotFound(err, "contract not found")
+		return nil, nil, mapNotFound(err, "договор не найден")
 	}
 	progress, err := s.progress(ctx, c)
 	if err != nil {
@@ -113,7 +113,7 @@ func (s *Service) List(ctx context.Context, f domain.Filter) ([]domain.Contract,
 func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*domain.Contract, map[string]LineProgress, error) {
 	c, err := s.contracts.GetByID(ctx, id)
 	if err != nil {
-		return nil, nil, mapNotFound(err, "contract not found")
+		return nil, nil, mapNotFound(err, "договор не найден")
 	}
 
 	if in.Name != nil {
@@ -133,7 +133,7 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*domai
 	}
 	if in.ContractNumber != nil && *in.ContractNumber != c.ContractNumber {
 		if *in.ContractNumber == "" {
-			return nil, nil, web.BadRequest("contract_number is required")
+			return nil, nil, web.BadRequest("номер договора обязателен")
 		}
 		if err := s.ensureNumberAvailable(ctx, *in.ContractNumber, c.ID); err != nil {
 			return nil, nil, err
@@ -168,11 +168,11 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*domai
 			}
 			newPlanned, ok := incoming[old.ID]
 			if !ok {
-				return nil, nil, web.Conflict(fmt.Sprintf("contract line %s has releases and cannot be removed", old.ID))
+				return nil, nil, web.Conflict(fmt.Sprintf("строка договора %s имеет отгрузки и не может быть удалена", old.ID))
 			}
 			if newPlanned < rel {
 				return nil, nil, web.Unprocessable(fmt.Sprintf(
-					"planned_quantity for contract line %s (%d) is below the already-released quantity (%d)",
+					"плановое количество для строки договора %s (%d) меньше уже отгруженного количества (%d)",
 					old.ID, newPlanned, rel))
 			}
 		}
@@ -186,7 +186,7 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*domai
 
 	if err := s.contracts.Update(ctx, c); err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
-			return nil, nil, web.Conflict("a contract with this number already exists")
+			return nil, nil, web.Conflict("договор с таким номером уже существует")
 		}
 		return nil, nil, err
 	}
@@ -200,14 +200,14 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*domai
 
 func (s *Service) Delete(ctx context.Context, id string) error {
 	if _, err := s.contracts.GetByID(ctx, id); err != nil {
-		return mapNotFound(err, "contract not found")
+		return mapNotFound(err, "договор не найден")
 	}
 	count, err := s.releases.CountByContract(ctx, id)
 	if err != nil {
 		return err
 	}
 	if count > 0 {
-		return web.Conflict("contract has releases and cannot be deleted")
+		return web.Conflict("по договору есть отгрузки, его нельзя удалить")
 	}
 	return s.contracts.Delete(ctx, id)
 }
@@ -233,7 +233,7 @@ func (s *Service) validatePositions(ctx context.Context, lines []domain.Line) er
 	for _, l := range lines {
 		if _, err := s.positions.GetByID(ctx, l.PositionID); err != nil {
 			if errors.Is(err, store.ErrorNotFound) {
-				return web.BadRequest(fmt.Sprintf("position %s does not exist", l.PositionID))
+				return web.BadRequest(fmt.Sprintf("позиция %s не существует", l.PositionID))
 			}
 			return err
 		}
@@ -250,7 +250,7 @@ func (s *Service) ensureNumberAvailable(ctx context.Context, number, excludeID s
 		return err
 	}
 	if existing.ID != excludeID {
-		return web.Conflict("a contract with this number already exists")
+		return web.Conflict("договор с таким номером уже существует")
 	}
 	return nil
 }

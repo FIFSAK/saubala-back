@@ -64,7 +64,7 @@ func New(email, fullName string, role Role) (*User, error) {
 	}
 	email = NormalizeEmail(email)
 	if !role.IsValid() {
-		return nil, fmt.Errorf("invalid role %q", role)
+		return nil, fmt.Errorf("недопустимая роль %q", role)
 	}
 
 	now := time.Now().UTC()
@@ -95,14 +95,14 @@ func NormalizeEmail(email string) string {
 func ValidateEmail(email string) error {
 	email = strings.TrimSpace(email)
 	if email == "" {
-		return fmt.Errorf("email is required")
+		return fmt.Errorf("email обязателен")
 	}
 	addr, err := mail.ParseAddress(email)
 	if err != nil {
-		return fmt.Errorf("invalid email address")
+		return fmt.Errorf("некорректный email")
 	}
 	if !strings.EqualFold(addr.Address, email) {
-		return fmt.Errorf("invalid email address")
+		return fmt.Errorf("некорректный email")
 	}
 	return nil
 }
@@ -110,7 +110,7 @@ func ValidateEmail(email string) error {
 // ValidatePassword enforces the minimum password policy.
 func ValidatePassword(password string) error {
 	if len(password) < MinPasswordLength {
-		return fmt.Errorf("password must be at least %d characters", MinPasswordLength)
+		return fmt.Errorf("пароль должен содержать не менее %d символов", MinPasswordLength)
 	}
 	return nil
 }

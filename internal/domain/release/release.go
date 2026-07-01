@@ -34,23 +34,23 @@ type Release struct {
 // from the positions being drawn at release time.
 func New(contractID string, date time.Time, note, createdBy string, lines []Line) (*Release, error) {
 	if strings.TrimSpace(contractID) == "" {
-		return nil, fmt.Errorf("contract_id is required")
+		return nil, fmt.Errorf("договор обязателен")
 	}
 	if date.IsZero() {
-		return nil, fmt.Errorf("date is required")
+		return nil, fmt.Errorf("дата обязательна")
 	}
 	if len(lines) == 0 {
-		return nil, fmt.Errorf("at least one line is required")
+		return nil, fmt.Errorf("требуется хотя бы одна строка")
 	}
 	for i, l := range lines {
 		if strings.TrimSpace(l.ContractLineID) == "" {
-			return nil, fmt.Errorf("line %d: contract_line_id is required", i+1)
+			return nil, fmt.Errorf("строка %d: строка договора обязательна", i+1)
 		}
 		if strings.TrimSpace(l.PositionID) == "" {
-			return nil, fmt.Errorf("line %d: position_id is required", i+1)
+			return nil, fmt.Errorf("строка %d: позиция обязательна", i+1)
 		}
 		if l.Quantity <= 0 {
-			return nil, fmt.Errorf("line %d: quantity must be > 0", i+1)
+			return nil, fmt.Errorf("строка %d: количество должно быть > 0", i+1)
 		}
 	}
 

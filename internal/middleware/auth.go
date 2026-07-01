@@ -21,23 +21,23 @@ func Authenticator(tm *auth.TokenManager, users user.Repository) func(http.Handl
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token, ok := bearerToken(r)
 			if !ok {
-				web.WriteError(w, web.Unauthorized("missing or malformed authorization header"))
+				web.WriteError(w, web.Unauthorized("отсутствует или некорректный заголовок авторизации"))
 				return
 			}
 
 			claims, err := tm.Parse(token)
 			if err != nil {
-				web.WriteError(w, web.Unauthorized("invalid or expired token"))
+				web.WriteError(w, web.Unauthorized("недействительный или истёкший токен"))
 				return
 			}
 
 			u, err := users.GetByID(r.Context(), claims.UserID)
 			if err != nil {
-				web.WriteError(w, web.Unauthorized("user no longer exists"))
+				web.WriteError(w, web.Unauthorized("пользователь больше не существует"))
 				return
 			}
 			if !u.IsActive {
-				web.WriteError(w, web.Forbidden("account is deactivated"))
+				web.WriteError(w, web.Forbidden("учётная запись деактивирована"))
 				return
 			}
 
@@ -53,11 +53,11 @@ func RequireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u, ok := CurrentUser(r.Context())
 		if !ok {
-			web.WriteError(w, web.Unauthorized("authentication required"))
+			web.WriteError(w, web.Unauthorized("требуется аутентификация"))
 			return
 		}
 		if !u.Role.IsAdmin() {
-			web.WriteError(w, web.Forbidden("administrator privileges required"))
+			web.WriteError(w, web.Forbidden("требуются права администратора"))
 			return
 		}
 		next.ServeHTTP(w, r)

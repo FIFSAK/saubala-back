@@ -36,7 +36,7 @@ func New(name string) (*Brand, error) {
 // ValidateName checks that a brand name is non-empty.
 func ValidateName(name string) error {
 	if strings.TrimSpace(name) == "" {
-		return fmt.Errorf("brand name is required")
+		return fmt.Errorf("название бренда обязательно")
 	}
 	return nil
 }

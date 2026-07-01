@@ -52,19 +52,19 @@ func WriteError(w http.ResponseWriter, err error) {
 		return
 	}
 	if errors.Is(err, store.ErrorNotFound) {
-		JSON(w, http.StatusNotFound, errorBody{Error: "not found"})
+		JSON(w, http.StatusNotFound, errorBody{Error: "не найдено"})
 		return
 	}
-	JSON(w, http.StatusInternalServerError, errorBody{Error: "internal server error"})
+	JSON(w, http.StatusInternalServerError, errorBody{Error: "внутренняя ошибка сервера"})
 }
 
 // Decode reads a JSON request body into v, returning a 400 *Error on malformed input.
 func Decode(r *http.Request, v any) error {
 	if r.Body == nil {
-		return BadRequest("empty request body")
+		return BadRequest("пустое тело запроса")
 	}
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		return BadRequest("invalid request body")
+		return BadRequest("некорректное тело запроса")
 	}
 	return nil
 }

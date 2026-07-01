@@ -33,14 +33,12 @@ type receiptLineDTO struct {
 }
 
 type receiptResponse struct {
-	ID             string           `json:"id"`
-	Date           time.Time        `json:"date"`
-	Supplier       string           `json:"supplier"`
-	DocumentNumber string           `json:"document_number"`
-	Note           string           `json:"note"`
-	Lines          []receiptLineDTO `json:"lines"`
-	CreatedBy      string           `json:"created_by"`
-	CreatedAt      time.Time        `json:"created_at"`
+	ID        string           `json:"id"`
+	Date      time.Time        `json:"date"`
+	Note      string           `json:"note"`
+	Lines     []receiptLineDTO `json:"lines"`
+	CreatedBy string           `json:"created_by"`
+	CreatedAt time.Time        `json:"created_at"`
 }
 
 func toReceiptResponse(rec *domain.Receipt) receiptResponse {
@@ -49,23 +47,19 @@ func toReceiptResponse(rec *domain.Receipt) receiptResponse {
 		lines[i] = receiptLineDTO{PositionID: l.PositionID, Quantity: l.Quantity}
 	}
 	return receiptResponse{
-		ID:             rec.ID,
-		Date:           rec.Date,
-		Supplier:       rec.Supplier,
-		DocumentNumber: rec.DocumentNumber,
-		Note:           rec.Note,
-		Lines:          lines,
-		CreatedBy:      rec.CreatedBy,
-		CreatedAt:      rec.CreatedAt,
+		ID:        rec.ID,
+		Date:      rec.Date,
+		Note:      rec.Note,
+		Lines:     lines,
+		CreatedBy: rec.CreatedBy,
+		CreatedAt: rec.CreatedAt,
 	}
 }
 
 type createReceiptRequest struct {
-	Date           time.Time        `json:"date"`
-	Supplier       string           `json:"supplier"`
-	DocumentNumber string           `json:"document_number"`
-	Note           string           `json:"note"`
-	Lines          []receiptLineDTO `json:"lines"`
+	Date  time.Time        `json:"date"`
+	Note  string           `json:"note"`
+	Lines []receiptLineDTO `json:"lines"`
 }
 
 func (h *ReceiptHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -115,12 +109,10 @@ func (h *ReceiptHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rec, err := h.receipts.Create(r.Context(), receiptsvc.CreateInput{
-		Date:           req.Date,
-		Supplier:       req.Supplier,
-		DocumentNumber: req.DocumentNumber,
-		Note:           req.Note,
-		Lines:          lines,
-		CreatedBy:      actorID(actor),
+		Date:      req.Date,
+		Note:      req.Note,
+		Lines:     lines,
+		CreatedBy: actorID(actor),
 	})
 	if err != nil {
 		web.WriteError(w, err)

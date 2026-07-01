@@ -19,14 +19,12 @@ type receiptLineDoc struct {
 }
 
 type receiptDoc struct {
-	ID             string           `bson:"_id"`
-	Date           time.Time        `bson:"date"`
-	Supplier       string           `bson:"supplier"`
-	DocumentNumber string           `bson:"document_number"`
-	Note           string           `bson:"note"`
-	Lines          []receiptLineDoc `bson:"lines"`
-	CreatedBy      string           `bson:"created_by"`
-	CreatedAt      time.Time        `bson:"created_at"`
+	ID        string           `bson:"_id"`
+	Date      time.Time        `bson:"date"`
+	Note      string           `bson:"note"`
+	Lines     []receiptLineDoc `bson:"lines"`
+	CreatedBy string           `bson:"created_by"`
+	CreatedAt time.Time        `bson:"created_at"`
 }
 
 func toReceiptDoc(r *receipt.Receipt) receiptDoc {
@@ -35,14 +33,12 @@ func toReceiptDoc(r *receipt.Receipt) receiptDoc {
 		lines[i] = receiptLineDoc{PositionID: l.PositionID, Quantity: l.Quantity}
 	}
 	return receiptDoc{
-		ID:             r.ID,
-		Date:           r.Date,
-		Supplier:       r.Supplier,
-		DocumentNumber: r.DocumentNumber,
-		Note:           r.Note,
-		Lines:          lines,
-		CreatedBy:      r.CreatedBy,
-		CreatedAt:      r.CreatedAt,
+		ID:        r.ID,
+		Date:      r.Date,
+		Note:      r.Note,
+		Lines:     lines,
+		CreatedBy: r.CreatedBy,
+		CreatedAt: r.CreatedAt,
 	}
 }
 
@@ -52,14 +48,12 @@ func (d receiptDoc) toDomain() *receipt.Receipt {
 		lines[i] = receipt.Line{PositionID: l.PositionID, Quantity: l.Quantity}
 	}
 	return &receipt.Receipt{
-		ID:             d.ID,
-		Date:           d.Date,
-		Supplier:       d.Supplier,
-		DocumentNumber: d.DocumentNumber,
-		Note:           d.Note,
-		Lines:          lines,
-		CreatedBy:      d.CreatedBy,
-		CreatedAt:      d.CreatedAt,
+		ID:        d.ID,
+		Date:      d.Date,
+		Note:      d.Note,
+		Lines:     lines,
+		CreatedBy: d.CreatedBy,
+		CreatedAt: d.CreatedAt,
 	}
 }
 

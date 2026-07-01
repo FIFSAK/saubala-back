@@ -70,7 +70,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Release, 
 	c, err := s.contracts.GetByID(ctx, rel.ContractID)
 	if err != nil {
 		if errors.Is(err, store.ErrorNotFound) {
-			return nil, web.NotFound("contract not found")
+			return nil, web.NotFound("договор не найден")
 		}
 		return nil, err
 	}
@@ -86,12 +86,12 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Release, 
 	for i := range rel.Lines {
 		l := &rel.Lines[i]
 		if _, ok := planned[l.ContractLineID]; !ok {
-			return nil, web.BadRequest(fmt.Sprintf("contract line %s does not belong to this contract", l.ContractLineID))
+			return nil, web.BadRequest(fmt.Sprintf("строка договора %s не принадлежит этому договору", l.ContractLineID))
 		}
 		p, err := s.positions.GetByID(ctx, l.PositionID)
 		if err != nil {
 			if errors.Is(err, store.ErrorNotFound) {
-				return nil, web.BadRequest(fmt.Sprintf("position %s does not exist", l.PositionID))
+				return nil, web.BadRequest(fmt.Sprintf("позиция %s не существует", l.PositionID))
 			}
 			return nil, err
 		}
@@ -107,7 +107,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Release, 
 	for lineID, reqQty := range requested {
 		if releasedSoFar[lineID]+reqQty > planned[lineID] {
 			return nil, web.Unprocessable(fmt.Sprintf(
-				"release exceeds plan for contract line %s (planned %d, already released %d, requested %d)",
+				"отгрузка превышает план по строке договора %s (план %d, уже отгружено %d, запрошено %d)",
 				lineID, planned[lineID], releasedSoFar[lineID], reqQty))
 		}
 	}
@@ -119,13 +119,13 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Release, 
 		if err != nil {
 			s.compensate(ctx, applied)
 			if errors.Is(err, store.ErrorNotFound) {
-				return nil, web.BadRequest(fmt.Sprintf("position %s does not exist", l.PositionID))
+				return nil, web.BadRequest(fmt.Sprintf("позиция %s не существует", l.PositionID))
 			}
 			return nil, err
 		}
 		if !ok {
 			s.compensate(ctx, applied)
-			return nil, web.Conflict(fmt.Sprintf("insufficient stock for position %s", l.PositionID))
+			return nil, web.Conflict(fmt.Sprintf("недостаточно остатка для позиции %s", l.PositionID))
 		}
 		applied = append(applied, l)
 	}
@@ -141,7 +141,7 @@ func (s *Service) Get(ctx context.Context, id string) (*domain.Release, error) {
 	r, err := s.releases.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, store.ErrorNotFound) {
-			return nil, web.NotFound("release not found")
+			return nil, web.NotFound("отгрузка не найдена")
 		}
 		return nil, err
 	}

@@ -17,7 +17,6 @@ type Position struct {
 	Name          string
 	BrandID       string
 	ContractName  string
-	SupplierName  string
 	ExpiryDate    time.Time
 	LotNumber     string
 	PurchasePrice int64 // per unit, tiyn
@@ -29,31 +28,31 @@ type Position struct {
 
 // New constructs a validated position. initialQuantity may be 0; when > 0 the
 // service treats it as an opening receipt.
-func New(name, brandID, contractName, supplierName, lotNumber string, expiryDate time.Time, purchasePrice int64, initialQuantity, massGrams int) (*Position, error) {
+func New(name, brandID, contractName, lotNumber string, expiryDate time.Time, purchasePrice int64, initialQuantity, massGrams int) (*Position, error) {
 	name = strings.TrimSpace(name)
 	brandID = strings.TrimSpace(brandID)
 	lotNumber = strings.TrimSpace(lotNumber)
 
 	if name == "" {
-		return nil, fmt.Errorf("position name is required")
+		return nil, fmt.Errorf("название позиции обязательно")
 	}
 	if brandID == "" {
-		return nil, fmt.Errorf("brand_id is required")
+		return nil, fmt.Errorf("бренд обязателен")
 	}
 	if expiryDate.IsZero() {
-		return nil, fmt.Errorf("expiry_date is required")
+		return nil, fmt.Errorf("срок годности обязателен")
 	}
 	if lotNumber == "" {
-		return nil, fmt.Errorf("lot_number is required")
+		return nil, fmt.Errorf("номер партии обязателен")
 	}
 	if purchasePrice < 0 {
-		return nil, fmt.Errorf("purchase_price must be >= 0")
+		return nil, fmt.Errorf("цена закупки должна быть >= 0")
 	}
 	if massGrams < 0 {
-		return nil, fmt.Errorf("mass_grams must be >= 0")
+		return nil, fmt.Errorf("масса (г) должна быть >= 0")
 	}
 	if initialQuantity < 0 {
-		return nil, fmt.Errorf("quantity must be >= 0")
+		return nil, fmt.Errorf("количество должно быть >= 0")
 	}
 
 	now := time.Now().UTC()
@@ -62,7 +61,6 @@ func New(name, brandID, contractName, supplierName, lotNumber string, expiryDate
 		Name:          name,
 		BrandID:       brandID,
 		ContractName:  strings.TrimSpace(contractName),
-		SupplierName:  strings.TrimSpace(supplierName),
 		ExpiryDate:    expiryDate.UTC(),
 		LotNumber:     lotNumber,
 		PurchasePrice: purchasePrice,

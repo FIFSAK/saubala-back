@@ -7,7 +7,7 @@ import (
 
 // Filter describes the query parameters accepted by the positions list endpoint.
 type Filter struct {
-	Q            string // matched against name / contract_name / supplier_name / lot_number
+	Q            string // matched against name / contract_name / lot_number
 	BrandID      string
 	ExpiryBefore *time.Time
 	ExpiryAfter  *time.Time

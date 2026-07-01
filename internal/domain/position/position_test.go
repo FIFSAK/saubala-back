@@ -8,7 +8,7 @@ import (
 func TestNew(t *testing.T) {
 	expiry := time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC)
 
-	p, err := New("Milk", "brand-1", "Milk (contract)", "Supplier Co", "LOT-1", expiry, 50000, 10, 250)
+	p, err := New("Milk", "brand-1", "Milk (contract)", "LOT-1", expiry, 50000, 10, 250)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -26,13 +26,13 @@ func TestNew(t *testing.T) {
 		name string
 		fn   func() (*Position, error)
 	}{
-		{"empty name", func() (*Position, error) { return New("", "b", "", "", "L", expiry, 0, 0, 0) }},
-		{"empty brand", func() (*Position, error) { return New("n", "", "", "", "L", expiry, 0, 0, 0) }},
-		{"zero expiry", func() (*Position, error) { return New("n", "b", "", "", "L", time.Time{}, 0, 0, 0) }},
-		{"empty lot", func() (*Position, error) { return New("n", "b", "", "", "", expiry, 0, 0, 0) }},
-		{"negative price", func() (*Position, error) { return New("n", "b", "", "", "L", expiry, -1, 0, 0) }},
-		{"negative mass", func() (*Position, error) { return New("n", "b", "", "", "L", expiry, 0, 0, -1) }},
-		{"negative qty", func() (*Position, error) { return New("n", "b", "", "", "L", expiry, 0, -1, 0) }},
+		{"empty name", func() (*Position, error) { return New("", "b", "", "L", expiry, 0, 0, 0) }},
+		{"empty brand", func() (*Position, error) { return New("n", "", "", "L", expiry, 0, 0, 0) }},
+		{"zero expiry", func() (*Position, error) { return New("n", "b", "", "L", time.Time{}, 0, 0, 0) }},
+		{"empty lot", func() (*Position, error) { return New("n", "b", "", "", expiry, 0, 0, 0) }},
+		{"negative price", func() (*Position, error) { return New("n", "b", "", "L", expiry, -1, 0, 0) }},
+		{"negative mass", func() (*Position, error) { return New("n", "b", "", "L", expiry, 0, 0, -1) }},
+		{"negative qty", func() (*Position, error) { return New("n", "b", "", "L", expiry, 0, -1, 0) }},
 	}
 	for _, tc := range bad {
 		if _, err := tc.fn(); err == nil {

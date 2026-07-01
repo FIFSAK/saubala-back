@@ -63,16 +63,16 @@ func New(name, customerAddress, contractNumber string, contractDate time.Time, b
 
 func validateHeader(name, customerAddress, contractNumber string, contractDate time.Time, bin string) error {
 	if strings.TrimSpace(name) == "" {
-		return fmt.Errorf("name is required")
+		return fmt.Errorf("наименование обязательно")
 	}
 	if strings.TrimSpace(customerAddress) == "" {
-		return fmt.Errorf("customer_address is required")
+		return fmt.Errorf("адрес заказчика обязателен")
 	}
 	if strings.TrimSpace(contractNumber) == "" {
-		return fmt.Errorf("contract_number is required")
+		return fmt.Errorf("номер договора обязателен")
 	}
 	if contractDate.IsZero() {
-		return fmt.Errorf("contract_date is required")
+		return fmt.Errorf("дата договора обязательна")
 	}
 	if err := ValidateBIN(bin); err != nil {
 		return err
@@ -83,7 +83,7 @@ func validateHeader(name, customerAddress, contractNumber string, contractDate t
 // ValidateBIN checks that bin is exactly 12 digits.
 func ValidateBIN(bin string) error {
 	if !binRe.MatchString(strings.TrimSpace(bin)) {
-		return fmt.Errorf("bin must be exactly 12 digits")
+		return fmt.Errorf("БИН должен состоять ровно из 12 цифр")
 	}
 	return nil
 }
@@ -92,18 +92,18 @@ func ValidateBIN(bin string) error {
 // does not already have one (preserving existing IDs across updates).
 func NormalizeLines(lines []Line) ([]Line, error) {
 	if len(lines) == 0 {
-		return nil, fmt.Errorf("at least one line is required")
+		return nil, fmt.Errorf("требуется хотя бы одна строка")
 	}
 	out := make([]Line, len(lines))
 	for i, l := range lines {
 		if strings.TrimSpace(l.PositionID) == "" {
-			return nil, fmt.Errorf("line %d: position_id is required", i+1)
+			return nil, fmt.Errorf("строка %d: позиция обязательна", i+1)
 		}
 		if l.PlannedQuantity <= 0 {
-			return nil, fmt.Errorf("line %d: planned_quantity must be > 0", i+1)
+			return nil, fmt.Errorf("строка %d: плановое количество должно быть > 0", i+1)
 		}
 		if l.PlannedPrice != nil && *l.PlannedPrice < 0 {
-			return nil, fmt.Errorf("line %d: planned_price must be >= 0", i+1)
+			return nil, fmt.Errorf("строка %d: плановая цена должна быть >= 0", i+1)
 		}
 		id := strings.TrimSpace(l.ID)
 		if id == "" {

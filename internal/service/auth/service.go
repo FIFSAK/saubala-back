@@ -32,16 +32,16 @@ func (s *Service) Login(ctx context.Context, email, password string) (*Result, e
 	u, err := s.users.GetByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, store.ErrorNotFound) {
-			return nil, web.Unauthorized("invalid email or password")
+			return nil, web.Unauthorized("неверный email или пароль")
 		}
 		return nil, err
 	}
 
 	if !auth.CheckPassword(u.PasswordHash, password) {
-		return nil, web.Unauthorized("invalid email or password")
+		return nil, web.Unauthorized("неверный email или пароль")
 	}
 	if !u.IsActive {
-		return nil, web.Forbidden("account is deactivated")
+		return nil, web.Forbidden("учётная запись деактивирована")
 	}
 
 	token, err := s.tokens.Generate(u.ID, string(u.Role))

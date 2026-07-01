@@ -30,7 +30,7 @@ func (s *Service) Create(ctx context.Context, name string) (*domain.Brand, error
 	}
 	if err := s.brands.Create(ctx, b); err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
-			return nil, web.Conflict("a brand with this name already exists")
+			return nil, web.Conflict("бренд с таким названием уже существует")
 		}
 		return nil, err
 	}
@@ -40,7 +40,7 @@ func (s *Service) Create(ctx context.Context, name string) (*domain.Brand, error
 func (s *Service) Get(ctx context.Context, id string) (*domain.Brand, error) {
 	b, err := s.brands.GetByID(ctx, id)
 	if err != nil {
-		return nil, mapNotFound(err, "brand not found")
+		return nil, mapNotFound(err, "бренд не найден")
 	}
 	return b, nil
 }
@@ -52,7 +52,7 @@ func (s *Service) List(ctx context.Context, f domain.Filter) ([]domain.Brand, in
 func (s *Service) Update(ctx context.Context, id, name string) (*domain.Brand, error) {
 	b, err := s.brands.GetByID(ctx, id)
 	if err != nil {
-		return nil, mapNotFound(err, "brand not found")
+		return nil, mapNotFound(err, "бренд не найден")
 	}
 	if err := domain.ValidateName(name); err != nil {
 		return nil, web.BadRequest(err.Error())
@@ -63,7 +63,7 @@ func (s *Service) Update(ctx context.Context, id, name string) (*domain.Brand, e
 	b.Name = name
 	if err := s.brands.Update(ctx, b); err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
-			return nil, web.Conflict("a brand with this name already exists")
+			return nil, web.Conflict("бренд с таким названием уже существует")
 		}
 		return nil, err
 	}
@@ -72,14 +72,14 @@ func (s *Service) Update(ctx context.Context, id, name string) (*domain.Brand, e
 
 func (s *Service) Delete(ctx context.Context, id string) error {
 	if _, err := s.brands.GetByID(ctx, id); err != nil {
-		return mapNotFound(err, "brand not found")
+		return mapNotFound(err, "бренд не найден")
 	}
 	count, err := s.positions.CountByBrand(ctx, id)
 	if err != nil {
 		return err
 	}
 	if count > 0 {
-		return web.Conflict("brand is referenced by existing positions")
+		return web.Conflict("бренд используется существующими позициями")
 	}
 	return s.brands.SoftDelete(ctx, id)
 }
@@ -94,7 +94,7 @@ func (s *Service) ensureNameAvailable(ctx context.Context, name, excludeID strin
 		return err
 	}
 	if existing.ID != excludeID {
-		return web.Conflict("a brand with this name already exists")
+		return web.Conflict("бренд с таким названием уже существует")
 	}
 	return nil
 }

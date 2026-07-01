@@ -33,12 +33,10 @@ type LineInput struct {
 
 // CreateInput is the payload for creating a receipt.
 type CreateInput struct {
-	Date           time.Time
-	Supplier       string
-	DocumentNumber string
-	Note           string
-	Lines          []LineInput
-	CreatedBy      string
+	Date      time.Time
+	Note      string
+	Lines     []LineInput
+	CreatedBy string
 }
 
 func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Receipt, error) {
@@ -47,7 +45,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Receipt, 
 		lines[i] = domain.Line{PositionID: l.PositionID, Quantity: l.Quantity}
 	}
 
-	rec, err := domain.New(in.Date, in.Supplier, in.DocumentNumber, in.Note, in.CreatedBy, lines)
+	rec, err := domain.New(in.Date, in.Note, in.CreatedBy, lines)
 	if err != nil {
 		return nil, web.BadRequest(err.Error())
 	}
@@ -56,7 +54,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Receipt, 
 	for _, l := range rec.Lines {
 		if _, err := s.positions.GetByID(ctx, l.PositionID); err != nil {
 			if errors.Is(err, store.ErrorNotFound) {
-				return nil, web.BadRequest(fmt.Sprintf("position %s does not exist", l.PositionID))
+				return nil, web.BadRequest(fmt.Sprintf("позиция %s не существует", l.PositionID))
 			}
 			return nil, err
 		}
@@ -83,7 +81,7 @@ func (s *Service) Get(ctx context.Context, id string) (*domain.Receipt, error) {
 	r, err := s.receipts.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, store.ErrorNotFound) {
-			return nil, web.NotFound("receipt not found")
+			return nil, web.NotFound("поступление не найдено")
 		}
 		return nil, err
 	}

@@ -35,7 +35,6 @@ type positionResponse struct {
 	Name          string    `json:"name"`
 	BrandID       string    `json:"brand_id"`
 	ContractName  string    `json:"contract_name"`
-	SupplierName  string    `json:"supplier_name"`
 	ExpiryDate    time.Time `json:"expiry_date"`
 	LotNumber     string    `json:"lot_number"`
 	PurchasePrice int64     `json:"purchase_price"`
@@ -51,7 +50,6 @@ func toPositionResponse(p *domain.Position) positionResponse {
 		Name:          p.Name,
 		BrandID:       p.BrandID,
 		ContractName:  p.ContractName,
-		SupplierName:  p.SupplierName,
 		ExpiryDate:    p.ExpiryDate,
 		LotNumber:     p.LotNumber,
 		PurchasePrice: p.PurchasePrice,
@@ -66,7 +64,6 @@ type createPositionRequest struct {
 	Name          string    `json:"name"`
 	BrandID       string    `json:"brand_id"`
 	ContractName  string    `json:"contract_name"`
-	SupplierName  string    `json:"supplier_name"`
 	ExpiryDate    time.Time `json:"expiry_date"`
 	LotNumber     string    `json:"lot_number"`
 	PurchasePrice int64     `json:"purchase_price"`
@@ -78,7 +75,6 @@ type updatePositionRequest struct {
 	Name          *string    `json:"name"`
 	BrandID       *string    `json:"brand_id"`
 	ContractName  *string    `json:"contract_name"`
-	SupplierName  *string    `json:"supplier_name"`
 	ExpiryDate    *time.Time `json:"expiry_date"`
 	LotNumber     *string    `json:"lot_number"`
 	PurchasePrice *int64     `json:"purchase_price"`
@@ -136,7 +132,6 @@ func (h *PositionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Name:          req.Name,
 		BrandID:       req.BrandID,
 		ContractName:  req.ContractName,
-		SupplierName:  req.SupplierName,
 		ExpiryDate:    req.ExpiryDate,
 		LotNumber:     req.LotNumber,
 		PurchasePrice: req.PurchasePrice,
@@ -170,7 +165,6 @@ func (h *PositionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Name:          req.Name,
 		BrandID:       req.BrandID,
 		ContractName:  req.ContractName,
-		SupplierName:  req.SupplierName,
 		ExpiryDate:    req.ExpiryDate,
 		LotNumber:     req.LotNumber,
 		PurchasePrice: req.PurchasePrice,
