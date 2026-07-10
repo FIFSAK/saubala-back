@@ -33,6 +33,8 @@ func (h *ContractHandler) Register(r chi.Router) {
 type contractLineResponse struct {
 	ID               string `json:"id"`
 	PositionID       string `json:"position_id"`
+	PositionName     string `json:"position_name"`
+	LotNumber        string `json:"lot_number"`
 	PlannedQuantity  int    `json:"planned_quantity"`
 	PlannedPrice     *int64 `json:"planned_price"`
 	ReleasedQuantity int    `json:"released_quantity"`
@@ -43,6 +45,8 @@ type contractLineResponse struct {
 type contractLinePlan struct {
 	ID              string `json:"id"`
 	PositionID      string `json:"position_id"`
+	PositionName    string `json:"position_name"`
+	LotNumber       string `json:"lot_number"`
 	PlannedQuantity int    `json:"planned_quantity"`
 	PlannedPrice    *int64 `json:"planned_price"`
 }
@@ -73,16 +77,19 @@ type contractListItem struct {
 	UpdatedAt       time.Time          `json:"updated_at"`
 }
 
-func toContractResponse(c *domain.Contract, progress map[string]contractsvc.LineProgress) contractResponse {
+func toContractResponse(c *domain.Contract, progress map[string]contractsvc.LineProgress, prefs map[string]contractsvc.PositionRef) contractResponse {
 	lines := make([]contractLineResponse, len(c.Lines))
 	for i, l := range c.Lines {
 		released, remaining := 0, l.PlannedQuantity
 		if p, ok := progress[l.ID]; ok {
 			released, remaining = p.Released, p.Remaining
 		}
+		pref := prefs[l.PositionID]
 		lines[i] = contractLineResponse{
 			ID:               l.ID,
 			PositionID:       l.PositionID,
+			PositionName:     pref.Name,
+			LotNumber:        pref.LotNumber,
 			PlannedQuantity:  l.PlannedQuantity,
 			PlannedPrice:     l.PlannedPrice,
 			ReleasedQuantity: released,
@@ -103,12 +110,15 @@ func toContractResponse(c *domain.Contract, progress map[string]contractsvc.Line
 	}
 }
 
-func toContractListItem(c *domain.Contract) contractListItem {
+func toContractListItem(c *domain.Contract, prefs map[string]contractsvc.PositionRef) contractListItem {
 	lines := make([]contractLinePlan, len(c.Lines))
 	for i, l := range c.Lines {
+		pref := prefs[l.PositionID]
 		lines[i] = contractLinePlan{
 			ID:              l.ID,
 			PositionID:      l.PositionID,
+			PositionName:    pref.Name,
+			LotNumber:       pref.LotNumber,
 			PlannedQuantity: l.PlannedQuantity,
 			PlannedPrice:    l.PlannedPrice,
 		}
@@ -192,9 +202,14 @@ func (h *ContractHandler) List(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
+	prefs, err := h.contracts.PositionRefs(r.Context(), contracts)
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
 	items := make([]contractListItem, len(contracts))
 	for i := range contracts {
-		items[i] = toContractListItem(&contracts[i])
+		items[i] = toContractListItem(&contracts[i], prefs)
 	}
 	web.List(w, items, total, p)
 }
@@ -220,8 +235,13 @@ func (h *ContractHandler) Create(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
+	prefs, err := h.contracts.PositionRefs(r.Context(), []domain.Contract{*c})
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
 	// A brand-new contract has no releases yet, so progress is all-zero.
-	web.JSON(w, http.StatusCreated, toContractResponse(c, nil))
+	web.JSON(w, http.StatusCreated, toContractResponse(c, nil, prefs))
 }
 
 func (h *ContractHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -230,7 +250,12 @@ func (h *ContractHandler) Get(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
-	web.JSON(w, http.StatusOK, toContractResponse(c, progress))
+	prefs, err := h.contracts.PositionRefs(r.Context(), []domain.Contract{*c})
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
+	web.JSON(w, http.StatusOK, toContractResponse(c, progress, prefs))
 }
 
 func (h *ContractHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -257,7 +282,12 @@ func (h *ContractHandler) Update(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
-	web.JSON(w, http.StatusOK, toContractResponse(c, progress))
+	prefs, err := h.contracts.PositionRefs(r.Context(), []domain.Contract{*c})
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
+	web.JSON(w, http.StatusOK, toContractResponse(c, progress, prefs))
 }
 
 func (h *ContractHandler) Delete(w http.ResponseWriter, r *http.Request) {

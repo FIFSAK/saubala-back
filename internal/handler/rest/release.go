@@ -30,38 +30,48 @@ func (h *ReleaseHandler) Register(r chi.Router) {
 type releaseLineDTO struct {
 	ContractLineID string `json:"contract_line_id"`
 	PositionID     string `json:"position_id"`
+	PositionName   string `json:"position_name"`
+	LotNumber      string `json:"lot_number"`
 	Quantity       int    `json:"quantity"`
 	UnitCost       int64  `json:"unit_cost"`
 }
 
 type releaseResponse struct {
-	ID         string           `json:"id"`
-	ContractID string           `json:"contract_id"`
-	Date       time.Time        `json:"date"`
-	Note       string           `json:"note"`
-	Lines      []releaseLineDTO `json:"lines"`
-	CreatedBy  string           `json:"created_by"`
-	CreatedAt  time.Time        `json:"created_at"`
+	ID             string           `json:"id"`
+	ContractID     string           `json:"contract_id"`
+	ContractNumber string           `json:"contract_number"`
+	ContractName   string           `json:"contract_name"`
+	Date           time.Time        `json:"date"`
+	Note           string           `json:"note"`
+	Lines          []releaseLineDTO `json:"lines"`
+	CreatedBy      string           `json:"created_by"`
+	CreatedAt      time.Time        `json:"created_at"`
 }
 
-func toReleaseResponse(rel *domain.Release) releaseResponse {
+func toReleaseResponse(rel *domain.Release, crefs map[string]releasesvc.ContractRef, prefs map[string]releasesvc.PositionRef) releaseResponse {
 	lines := make([]releaseLineDTO, len(rel.Lines))
 	for i, l := range rel.Lines {
+		pref := prefs[l.PositionID]
 		lines[i] = releaseLineDTO{
 			ContractLineID: l.ContractLineID,
 			PositionID:     l.PositionID,
+			PositionName:   pref.Name,
+			LotNumber:      pref.LotNumber,
 			Quantity:       l.Quantity,
 			UnitCost:       l.UnitCost,
 		}
 	}
+	cref := crefs[rel.ContractID]
 	return releaseResponse{
-		ID:         rel.ID,
-		ContractID: rel.ContractID,
-		Date:       rel.Date,
-		Note:       rel.Note,
-		Lines:      lines,
-		CreatedBy:  rel.CreatedBy,
-		CreatedAt:  rel.CreatedAt,
+		ID:             rel.ID,
+		ContractID:     rel.ContractID,
+		ContractNumber: cref.Number,
+		ContractName:   cref.Name,
+		Date:           rel.Date,
+		Note:           rel.Note,
+		Lines:          lines,
+		CreatedBy:      rel.CreatedBy,
+		CreatedAt:      rel.CreatedAt,
 	}
 }
 
@@ -104,9 +114,14 @@ func (h *ReleaseHandler) List(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
+	crefs, prefs, err := h.releases.Refs(r.Context(), releases)
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
 	items := make([]releaseResponse, len(releases))
 	for i := range releases {
-		items[i] = toReleaseResponse(&releases[i])
+		items[i] = toReleaseResponse(&releases[i], crefs, prefs)
 	}
 	web.List(w, items, total, p)
 }
@@ -139,7 +154,12 @@ func (h *ReleaseHandler) Create(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
-	web.JSON(w, http.StatusCreated, toReleaseResponse(rel))
+	crefs, prefs, err := h.releases.Refs(r.Context(), []domain.Release{*rel})
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
+	web.JSON(w, http.StatusCreated, toReleaseResponse(rel, crefs, prefs))
 }
 
 func (h *ReleaseHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -148,5 +168,10 @@ func (h *ReleaseHandler) Get(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
-	web.JSON(w, http.StatusOK, toReleaseResponse(rel))
+	crefs, prefs, err := h.releases.Refs(r.Context(), []domain.Release{*rel})
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
+	web.JSON(w, http.StatusOK, toReleaseResponse(rel, crefs, prefs))
 }

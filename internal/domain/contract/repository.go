@@ -21,6 +21,9 @@ type Filter struct {
 type Repository interface {
 	Create(ctx context.Context, c *Contract) error
 	GetByID(ctx context.Context, id string) (*Contract, error)
+	// GetByIDs returns the contracts with the given IDs; unknown IDs are skipped
+	// silently (used for batch reference-label lookups).
+	GetByIDs(ctx context.Context, ids []string) ([]Contract, error)
 	GetByNumber(ctx context.Context, number string) (*Contract, error)
 	Update(ctx context.Context, c *Contract) error
 	Delete(ctx context.Context, id string) error

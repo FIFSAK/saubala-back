@@ -28,8 +28,10 @@ func (h *ReceiptHandler) Register(r chi.Router) {
 }
 
 type receiptLineDTO struct {
-	PositionID string `json:"position_id"`
-	Quantity   int    `json:"quantity"`
+	PositionID   string `json:"position_id"`
+	PositionName string `json:"position_name"`
+	LotNumber    string `json:"lot_number"`
+	Quantity     int    `json:"quantity"`
 }
 
 type receiptResponse struct {
@@ -41,10 +43,16 @@ type receiptResponse struct {
 	CreatedAt time.Time        `json:"created_at"`
 }
 
-func toReceiptResponse(rec *domain.Receipt) receiptResponse {
+func toReceiptResponse(rec *domain.Receipt, prefs map[string]receiptsvc.PositionRef) receiptResponse {
 	lines := make([]receiptLineDTO, len(rec.Lines))
 	for i, l := range rec.Lines {
-		lines[i] = receiptLineDTO{PositionID: l.PositionID, Quantity: l.Quantity}
+		pref := prefs[l.PositionID]
+		lines[i] = receiptLineDTO{
+			PositionID:   l.PositionID,
+			PositionName: pref.Name,
+			LotNumber:    pref.LotNumber,
+			Quantity:     l.Quantity,
+		}
 	}
 	return receiptResponse{
 		ID:        rec.ID,
@@ -56,10 +64,15 @@ func toReceiptResponse(rec *domain.Receipt) receiptResponse {
 	}
 }
 
+type receiptLineRequest struct {
+	PositionID string `json:"position_id"`
+	Quantity   int    `json:"quantity"`
+}
+
 type createReceiptRequest struct {
-	Date  time.Time        `json:"date"`
-	Note  string           `json:"note"`
-	Lines []receiptLineDTO `json:"lines"`
+	Date  time.Time            `json:"date"`
+	Note  string               `json:"note"`
+	Lines []receiptLineRequest `json:"lines"`
 }
 
 func (h *ReceiptHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -88,9 +101,14 @@ func (h *ReceiptHandler) List(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
+	prefs, err := h.receipts.PositionRefs(r.Context(), receipts)
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
 	items := make([]receiptResponse, len(receipts))
 	for i := range receipts {
-		items[i] = toReceiptResponse(&receipts[i])
+		items[i] = toReceiptResponse(&receipts[i], prefs)
 	}
 	web.List(w, items, total, p)
 }
@@ -118,7 +136,12 @@ func (h *ReceiptHandler) Create(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
-	web.JSON(w, http.StatusCreated, toReceiptResponse(rec))
+	prefs, err := h.receipts.PositionRefs(r.Context(), []domain.Receipt{*rec})
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
+	web.JSON(w, http.StatusCreated, toReceiptResponse(rec, prefs))
 }
 
 func (h *ReceiptHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -127,5 +150,10 @@ func (h *ReceiptHandler) Get(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
-	web.JSON(w, http.StatusOK, toReceiptResponse(rec))
+	prefs, err := h.receipts.PositionRefs(r.Context(), []domain.Receipt{*rec})
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
+	web.JSON(w, http.StatusOK, toReceiptResponse(rec, prefs))
 }

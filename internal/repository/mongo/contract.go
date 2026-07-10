@@ -110,6 +110,26 @@ func (r *ContractRepository) GetByID(ctx context.Context, id string) (*contract.
 	return r.findOne(ctx, bson.M{"_id": id})
 }
 
+func (r *ContractRepository) GetByIDs(ctx context.Context, ids []string) ([]contract.Contract, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	cur, err := r.coll.Find(ctx, bson.M{"_id": bson.M{"$in": ids}})
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var docs []contractDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]contract.Contract, len(docs))
+	for i, d := range docs {
+		out[i] = *d.toDomain()
+	}
+	return out, nil
+}
+
 func (r *ContractRepository) GetByNumber(ctx context.Context, number string) (*contract.Contract, error) {
 	return r.findOne(ctx, bson.M{"contract_number": number})
 }

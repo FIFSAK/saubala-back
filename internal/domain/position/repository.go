@@ -25,6 +25,9 @@ type Filter struct {
 type Repository interface {
 	Create(ctx context.Context, p *Position) error
 	GetByID(ctx context.Context, id string) (*Position, error)
+	// GetByIDs returns the positions with the given IDs; unknown IDs are skipped
+	// silently (used for batch reference-label lookups).
+	GetByIDs(ctx context.Context, ids []string) ([]Position, error)
 	// Update persists descriptive fields only (it must not change Quantity).
 	Update(ctx context.Context, p *Position) error
 	Delete(ctx context.Context, id string) error

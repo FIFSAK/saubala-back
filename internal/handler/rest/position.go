@@ -34,6 +34,7 @@ type positionResponse struct {
 	ID            string    `json:"id"`
 	Name          string    `json:"name"`
 	BrandID       string    `json:"brand_id"`
+	BrandName     string    `json:"brand_name"`
 	ContractName  string    `json:"contract_name"`
 	ExpiryDate    time.Time `json:"expiry_date"`
 	LotNumber     string    `json:"lot_number"`
@@ -44,11 +45,12 @@ type positionResponse struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
-func toPositionResponse(p *domain.Position) positionResponse {
+func toPositionResponse(p *domain.Position, brandNames map[string]string) positionResponse {
 	return positionResponse{
 		ID:            p.ID,
 		Name:          p.Name,
 		BrandID:       p.BrandID,
+		BrandName:     brandNames[p.BrandID],
 		ContractName:  p.ContractName,
 		ExpiryDate:    p.ExpiryDate,
 		LotNumber:     p.LotNumber,
@@ -58,6 +60,16 @@ func toPositionResponse(p *domain.Position) positionResponse {
 		CreatedAt:     p.CreatedAt,
 		UpdatedAt:     p.UpdatedAt,
 	}
+}
+
+// respondPosition enriches and writes a single position.
+func (h *PositionHandler) respondPosition(w http.ResponseWriter, r *http.Request, status int, p *domain.Position) {
+	names, err := h.positions.BrandNames(r.Context(), []domain.Position{*p})
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
+	web.JSON(w, status, toPositionResponse(p, names))
 }
 
 type createPositionRequest struct {
@@ -113,9 +125,14 @@ func (h *PositionHandler) List(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
+	brandNames, err := h.positions.BrandNames(r.Context(), positions)
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
 	items := make([]positionResponse, len(positions))
 	for i := range positions {
-		items[i] = toPositionResponse(&positions[i])
+		items[i] = toPositionResponse(&positions[i], brandNames)
 	}
 	web.List(w, items, total, p)
 }
@@ -143,7 +160,7 @@ func (h *PositionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
-	web.JSON(w, http.StatusCreated, toPositionResponse(p))
+	h.respondPosition(w, r, http.StatusCreated, p)
 }
 
 func (h *PositionHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -152,7 +169,7 @@ func (h *PositionHandler) Get(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
-	web.JSON(w, http.StatusOK, toPositionResponse(p))
+	h.respondPosition(w, r, http.StatusOK, p)
 }
 
 func (h *PositionHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -174,7 +191,7 @@ func (h *PositionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
-	web.JSON(w, http.StatusOK, toPositionResponse(p))
+	h.respondPosition(w, r, http.StatusOK, p)
 }
 
 func (h *PositionHandler) Delete(w http.ResponseWriter, r *http.Request) {

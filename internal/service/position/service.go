@@ -118,6 +118,28 @@ func (s *Service) List(ctx context.Context, f domain.Filter) ([]domain.Position,
 	return s.positions.List(ctx, f)
 }
 
+// BrandNames batch-loads brand names for the given positions (including
+// soft-deleted brands, so existing references keep their labels).
+func (s *Service) BrandNames(ctx context.Context, ps []domain.Position) (map[string]string, error) {
+	ids := make(map[string]struct{}, len(ps))
+	for i := range ps {
+		ids[ps[i].BrandID] = struct{}{}
+	}
+	list := make([]string, 0, len(ids))
+	for id := range ids {
+		list = append(list, id)
+	}
+	brands, err := s.brands.GetByIDs(ctx, list)
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[string]string, len(brands))
+	for i := range brands {
+		names[brands[i].ID] = brands[i].Name
+	}
+	return names, nil
+}
+
 func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*domain.Position, error) {
 	p, err := s.positions.GetByID(ctx, id)
 	if err != nil {

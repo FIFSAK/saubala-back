@@ -19,6 +19,10 @@ The Makefile wraps the common workflows:
 - `make vet` — `go vet ./...`
 - `make tidy` — `go mod tidy`
 - `make seed` / `make seed-reset` — run the demo-data seeder (`./cmd/seed`), `-reset` wipes first
+- `make import` / `make import-dry` — one-off migration of the customer's
+  `поставки 2026.xlsx` workbook (`./cmd/import-xlsx`); `-dry-run` parses and
+  reports without writing. Refuses to run twice (guards on existing contract
+  numbers).
 
 Run a single test:
 ```
@@ -100,6 +104,16 @@ Layers and their dependency direction (outer depends on inner):
 - **DTO mapping:** request/response structs live in the `rest` handler files (e.g.
   `createPositionRequest`, `positionResponse`, `toPositionResponse`) and are kept
   separate from domain entities — JSON shape is decoupled from storage shape.
+- **Reference labels are server-enriched:** list/get responses carry
+  human-readable names for referenced entities (releases → `contract_number`/
+  `contract_name` + per-line `position_name`/`lot_number`; receipts and contract
+  lines → `position_name`/`lot_number`; positions → `brand_name`). Services
+  batch-fetch them via the repositories' `GetByIDs` (one `$in` query per
+  collection, no `$lookup`); handlers merge the maps into DTOs. The frontend must
+  NEVER rebuild these labels from a `page_size:100` dictionary — that cap
+  silently truncates (there are 1000+ positions, 200+ contracts). For pick-lists
+  the frontend uses server-side search (`q`) via `useRemoteOptions` +
+  `<SelectSearch remote>`.
 
 ## Entry points
 

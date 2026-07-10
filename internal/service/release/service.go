@@ -152,6 +152,58 @@ func (s *Service) List(ctx context.Context, f domain.Filter) ([]domain.Release, 
 	return s.releases.List(ctx, f)
 }
 
+// ContractRef is the label data of a referenced contract.
+type ContractRef struct {
+	Number string
+	Name   string
+}
+
+// PositionRef is the label data of a referenced position.
+type PositionRef struct {
+	Name      string
+	LotNumber string
+}
+
+// Refs batch-loads the contract and position labels referenced by the given
+// releases, so responses carry human-readable names instead of bare IDs.
+func (s *Service) Refs(ctx context.Context, rels []domain.Release) (map[string]ContractRef, map[string]PositionRef, error) {
+	contractIDs := make(map[string]struct{})
+	positionIDs := make(map[string]struct{})
+	for i := range rels {
+		contractIDs[rels[i].ContractID] = struct{}{}
+		for _, l := range rels[i].Lines {
+			positionIDs[l.PositionID] = struct{}{}
+		}
+	}
+
+	contracts, err := s.contracts.GetByIDs(ctx, keys(contractIDs))
+	if err != nil {
+		return nil, nil, err
+	}
+	positions, err := s.positions.GetByIDs(ctx, keys(positionIDs))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	crefs := make(map[string]ContractRef, len(contracts))
+	for i := range contracts {
+		crefs[contracts[i].ID] = ContractRef{Number: contracts[i].ContractNumber, Name: contracts[i].Name}
+	}
+	prefs := make(map[string]PositionRef, len(positions))
+	for i := range positions {
+		prefs[positions[i].ID] = PositionRef{Name: positions[i].Name, LotNumber: positions[i].LotNumber}
+	}
+	return crefs, prefs, nil
+}
+
+func keys(set map[string]struct{}) []string {
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	return out
+}
+
 // compensate restores stock previously decremented in a failed release. It runs
 // on a detached context so a cancelled request cannot also defeat the restoring
 // writes, and logs any failure so the (rare) desync is detectable/reconcilable.

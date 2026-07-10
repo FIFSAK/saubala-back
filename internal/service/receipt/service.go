@@ -92,6 +92,36 @@ func (s *Service) List(ctx context.Context, f domain.Filter) ([]domain.Receipt, 
 	return s.receipts.List(ctx, f)
 }
 
+// PositionRef is the label data of a referenced position.
+type PositionRef struct {
+	Name      string
+	LotNumber string
+}
+
+// PositionRefs batch-loads the position labels referenced by the given
+// receipts, so responses carry human-readable names instead of bare IDs.
+func (s *Service) PositionRefs(ctx context.Context, recs []domain.Receipt) (map[string]PositionRef, error) {
+	ids := make(map[string]struct{})
+	for i := range recs {
+		for _, l := range recs[i].Lines {
+			ids[l.PositionID] = struct{}{}
+		}
+	}
+	list := make([]string, 0, len(ids))
+	for id := range ids {
+		list = append(list, id)
+	}
+	positions, err := s.positions.GetByIDs(ctx, list)
+	if err != nil {
+		return nil, err
+	}
+	refs := make(map[string]PositionRef, len(positions))
+	for i := range positions {
+		refs[positions[i].ID] = PositionRef{Name: positions[i].Name, LotNumber: positions[i].LotNumber}
+	}
+	return refs, nil
+}
+
 // compensate reverses previously-applied stock increments. It runs on a detached
 // context so a cancelled request cannot defeat the reversing writes, and logs any
 // failure so the (rare) desync is detectable/reconcilable.

@@ -110,6 +110,37 @@ func (s *Service) List(ctx context.Context, f domain.Filter) ([]domain.Contract,
 	return s.contracts.List(ctx, f)
 }
 
+// PositionRef is the label data of a referenced position.
+type PositionRef struct {
+	Name      string
+	LotNumber string
+}
+
+// PositionRefs batch-loads the position labels referenced by the appendix
+// lines of the given contracts, so responses carry human-readable names
+// instead of bare IDs.
+func (s *Service) PositionRefs(ctx context.Context, contracts []domain.Contract) (map[string]PositionRef, error) {
+	ids := make(map[string]struct{})
+	for i := range contracts {
+		for _, l := range contracts[i].Lines {
+			ids[l.PositionID] = struct{}{}
+		}
+	}
+	list := make([]string, 0, len(ids))
+	for id := range ids {
+		list = append(list, id)
+	}
+	positions, err := s.positions.GetByIDs(ctx, list)
+	if err != nil {
+		return nil, err
+	}
+	refs := make(map[string]PositionRef, len(positions))
+	for i := range positions {
+		refs[positions[i].ID] = PositionRef{Name: positions[i].Name, LotNumber: positions[i].LotNumber}
+	}
+	return refs, nil
+}
+
 func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*domain.Contract, map[string]LineProgress, error) {
 	c, err := s.contracts.GetByID(ctx, id)
 	if err != nil {

@@ -77,6 +77,28 @@ func (r *BrandRepository) GetByID(ctx context.Context, id string) (*brand.Brand,
 	return r.findOne(ctx, notDeleted(bson.M{"_id": id}))
 }
 
+// GetByIDs deliberately skips the notDeleted guard: labels for existing
+// references must survive a brand's soft deletion.
+func (r *BrandRepository) GetByIDs(ctx context.Context, ids []string) ([]brand.Brand, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	cur, err := r.coll.Find(ctx, bson.M{"_id": bson.M{"$in": ids}})
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var docs []brandDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]brand.Brand, len(docs))
+	for i, d := range docs {
+		out[i] = *d.toDomain()
+	}
+	return out, nil
+}
+
 func (r *BrandRepository) GetByName(ctx context.Context, name string) (*brand.Brand, error) {
 	return r.findOne(ctx, notDeleted(bson.M{"name": name}))
 }

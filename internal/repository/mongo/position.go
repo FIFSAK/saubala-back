@@ -94,6 +94,26 @@ func (r *PositionRepository) GetByID(ctx context.Context, id string) (*position.
 	return d.toDomain(), nil
 }
 
+func (r *PositionRepository) GetByIDs(ctx context.Context, ids []string) ([]position.Position, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	cur, err := r.coll.Find(ctx, bson.M{"_id": bson.M{"$in": ids}})
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var docs []positionDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]position.Position, len(docs))
+	for i, d := range docs {
+		out[i] = *d.toDomain()
+	}
+	return out, nil
+}
+
 // Update persists descriptive fields only; quantity is intentionally excluded.
 func (r *PositionRepository) Update(ctx context.Context, p *position.Position) error {
 	p.UpdatedAt = time.Now().UTC()
