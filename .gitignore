@@ -31,3 +31,5 @@ go.work.sum
 
 # runtime log output (see pkg/log: OutputPaths includes service.log)
 *.log
+
+.idea
