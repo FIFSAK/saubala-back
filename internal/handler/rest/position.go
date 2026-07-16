@@ -91,6 +91,7 @@ type updatePositionRequest struct {
 	LotNumber     *string    `json:"lot_number"`
 	PurchasePrice *int64     `json:"purchase_price"`
 	MassGrams     *int       `json:"mass_grams"`
+	Quantity      *int       `json:"quantity"`
 }
 
 func (h *PositionHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -178,6 +179,7 @@ func (h *PositionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
+	actor, _ := middleware.CurrentUser(r.Context())
 	p, err := h.positions.Update(r.Context(), chi.URLParam(r, "id"), positionsvc.UpdateInput{
 		Name:          req.Name,
 		BrandID:       req.BrandID,
@@ -186,6 +188,8 @@ func (h *PositionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		LotNumber:     req.LotNumber,
 		PurchasePrice: req.PurchasePrice,
 		MassGrams:     req.MassGrams,
+		Quantity:      req.Quantity,
+		ActorID:       actorID(actor),
 	})
 	if err != nil {
 		web.WriteError(w, err)

@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/FIFSAK/saubala-back/internal/domain/adjustment"
 	"github.com/FIFSAK/saubala-back/internal/domain/brand"
 	"github.com/FIFSAK/saubala-back/internal/domain/contract"
 	domain "github.com/FIFSAK/saubala-back/internal/domain/position"
@@ -17,11 +18,12 @@ import (
 
 // Service implements the positions (warehouse batches) use cases.
 type Service struct {
-	positions domain.Repository
-	brands    brand.Repository
-	receipts  receipt.Repository
-	releases  release.Repository
-	contracts contract.Repository
+	positions   domain.Repository
+	brands      brand.Repository
+	receipts    receipt.Repository
+	releases    release.Repository
+	contracts   contract.Repository
+	adjustments adjustment.Repository
 }
 
 func NewService(
@@ -30,13 +32,15 @@ func NewService(
 	receipts receipt.Repository,
 	releases release.Repository,
 	contracts contract.Repository,
+	adjustments adjustment.Repository,
 ) *Service {
 	return &Service{
-		positions: positions,
-		brands:    brands,
-		receipts:  receipts,
-		releases:  releases,
-		contracts: contracts,
+		positions:   positions,
+		brands:      brands,
+		receipts:    receipts,
+		releases:    releases,
+		contracts:   contracts,
+		adjustments: adjustments,
 	}
 }
 
@@ -53,8 +57,10 @@ type CreateInput struct {
 	CreatedBy     string
 }
 
-// UpdateInput carries the optionally-updated descriptive fields. Quantity is
-// intentionally absent: stock changes only via receipts and releases.
+// UpdateInput carries the optionally-updated descriptive fields. When Quantity
+// is set, the difference from current stock is recorded as an adjustment ledger
+// entry (a receipt/release replacement for bare manual corrections), so stock
+// stays reconciled with the movement history. ActorID attributes that entry.
 type UpdateInput struct {
 	Name          *string
 	BrandID       *string
@@ -63,6 +69,8 @@ type UpdateInput struct {
 	LotNumber     *string
 	PurchasePrice *int64
 	MassGrams     *int
+	Quantity      *int
+	ActorID       string
 }
 
 func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Position, error) {
@@ -189,7 +197,59 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*domai
 	if err := s.positions.Update(ctx, p); err != nil {
 		return nil, err
 	}
+
+	// A quantity edit is a manual stock correction: record it through the ledger
+	// (adjustment entry) rather than a direct write, so movements reconcile.
+	if in.Quantity != nil {
+		if *in.Quantity < 0 {
+			return nil, web.BadRequest("количество должно быть >= 0")
+		}
+		if delta := *in.Quantity - p.Quantity; delta != 0 {
+			if err := s.applyAdjustment(ctx, p.ID, delta, in.ActorID); err != nil {
+				return nil, err
+			}
+			p.Quantity = *in.Quantity
+		}
+	}
 	return p, nil
+}
+
+// applyAdjustment records a manual stock correction of delta units for a
+// position. It applies the stock change first and then writes the adjustment
+// ledger entry — the same ordering as Create's opening balance — so a persisted
+// entry always corresponds to applied stock, rolling the stock change back if
+// the ledger write fails.
+func (s *Service) applyAdjustment(ctx context.Context, positionID string, delta int, actorID string) error {
+	adj, err := adjustment.New(positionID, delta, "корректировка", actorID)
+	if err != nil {
+		return web.BadRequest(err.Error())
+	}
+
+	if delta > 0 {
+		if err := s.positions.IncrementQuantity(ctx, positionID, delta); err != nil {
+			return mapNotFound(err, "позиция не найдена")
+		}
+		if err := s.adjustments.Create(ctx, adj); err != nil {
+			_ = s.positions.IncrementQuantity(ctx, positionID, -delta)
+			return err
+		}
+		return nil
+	}
+
+	// delta < 0: draw stock down, but never below zero (guards against a
+	// concurrent release having already reduced it since we read the position).
+	ok, err := s.positions.DecrementIfAvailable(ctx, positionID, -delta)
+	if err != nil {
+		return mapNotFound(err, "позиция не найдена")
+	}
+	if !ok {
+		return web.Conflict("недостаточно остатка для уменьшения количества")
+	}
+	if err := s.adjustments.Create(ctx, adj); err != nil {
+		_ = s.positions.IncrementQuantity(ctx, positionID, -delta) // add drawn stock back
+		return err
+	}
+	return nil
 }
 
 func (s *Service) Delete(ctx context.Context, id string) error {
@@ -239,8 +299,12 @@ func (s *Service) Movements(ctx context.Context, id string) ([]domain.Movement, 
 	if err != nil {
 		return nil, err
 	}
+	adjs, err := s.adjustments.ListByPosition(ctx, id)
+	if err != nil {
+		return nil, err
+	}
 
-	movements := make([]domain.Movement, 0, len(recs)+len(rels))
+	movements := make([]domain.Movement, 0, len(recs)+len(rels)+len(adjs))
 	for _, r := range recs {
 		for _, l := range r.Lines {
 			if l.PositionID == id {
@@ -266,6 +330,15 @@ func (s *Service) Movements(ctx context.Context, id string) ([]domain.Movement, 
 				})
 			}
 		}
+	}
+	for _, a := range adjs {
+		movements = append(movements, domain.Movement{
+			Date:        a.CreatedAt,
+			Type:        domain.MovementAdjustment,
+			Quantity:    a.Delta,
+			ReferenceID: a.ID,
+			Note:        a.Note,
+		})
 	}
 
 	sort.SliceStable(movements, func(i, j int) bool {

@@ -15,6 +15,8 @@ const (
 	collReceipts  = "receipts"
 	collContracts = "contracts"
 	collReleases  = "releases"
+
+	collAdjustments = "adjustments"
 )
 
 // caseInsensitiveContains builds a case-insensitive "contains" regex condition

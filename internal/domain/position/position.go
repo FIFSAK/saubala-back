@@ -75,8 +75,9 @@ func New(name, brandID, contractName, lotNumber string, expiryDate time.Time, pu
 type MovementType string
 
 const (
-	MovementReceipt MovementType = "receipt"
-	MovementRelease MovementType = "release"
+	MovementReceipt    MovementType = "receipt"
+	MovementRelease    MovementType = "release"
+	MovementAdjustment MovementType = "adjustment"
 )
 
 // Movement is a single entry in a position's combined stock history. Receipts

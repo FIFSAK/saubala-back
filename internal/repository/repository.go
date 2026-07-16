@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 
+	"github.com/FIFSAK/saubala-back/internal/domain/adjustment"
 	"github.com/FIFSAK/saubala-back/internal/domain/brand"
 	"github.com/FIFSAK/saubala-back/internal/domain/contract"
 	"github.com/FIFSAK/saubala-back/internal/domain/position"
@@ -20,12 +21,13 @@ type Configuration func(r *Repositories) error
 type Repositories struct {
 	mongo *store.Mongo
 
-	User     user.Repository
-	Brand    brand.Repository
-	Position position.Repository
-	Receipt  receipt.Repository
-	Contract contract.Repository
-	Release  release.Repository
+	User       user.Repository
+	Brand      brand.Repository
+	Position   position.Repository
+	Receipt    receipt.Repository
+	Contract   contract.Repository
+	Release    release.Repository
+	Adjustment adjustment.Repository
 }
 
 // New builds the repositories aggregate from the given options.
@@ -62,6 +64,7 @@ func WithMongoStore(ctx context.Context, m *store.Mongo) Configuration {
 		r.Receipt = mongorepo.NewReceiptRepository(db)
 		r.Contract = mongorepo.NewContractRepository(db)
 		r.Release = mongorepo.NewReleaseRepository(db)
+		r.Adjustment = mongorepo.NewAdjustmentRepository(db)
 		return nil
 	}
 }

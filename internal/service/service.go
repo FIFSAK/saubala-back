@@ -74,6 +74,7 @@ func WithPositionService() Configuration {
 			s.deps.Repositories.Receipt,
 			s.deps.Repositories.Release,
 			s.deps.Repositories.Contract,
+			s.deps.Repositories.Adjustment,
 		)
 		return nil
 	}

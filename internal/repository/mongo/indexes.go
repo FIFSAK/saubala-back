@@ -50,6 +50,10 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 			{Keys: bson.D{{Key: "contract_id", Value: 1}}, Options: options.Index().SetName("idx_contract_id")},
 			{Keys: bson.D{{Key: "date", Value: 1}}, Options: options.Index().SetName("idx_date")},
 		},
+		collAdjustments: {
+			{Keys: bson.D{{Key: "position_id", Value: 1}}, Options: options.Index().SetName("idx_position_id")},
+			{Keys: bson.D{{Key: "created_at", Value: 1}}, Options: options.Index().SetName("idx_created_at")},
+		},
 	}
 
 	for coll, models := range specs {
