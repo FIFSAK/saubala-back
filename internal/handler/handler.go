@@ -31,6 +31,8 @@ type Handlers struct {
 	Receipt  *rest.ReceiptHandler
 	Contract *rest.ContractHandler
 	Release  *rest.ReleaseHandler
+	Settings *rest.SettingsHandler
+	Invoice  *rest.InvoiceHandler
 }
 
 // New builds the handlers aggregate from the given options.
@@ -93,6 +95,20 @@ func WithReleaseHandler() Configuration {
 	}
 }
 
+func WithSettingsHandler() Configuration {
+	return func(h *Handlers) error {
+		h.Settings = rest.NewSettingsHandler(h.deps.Services.Settings)
+		return nil
+	}
+}
+
+func WithInvoiceHandler() Configuration {
+	return func(h *Handlers) error {
+		h.Invoice = rest.NewInvoiceHandler(h.deps.Services.Invoice)
+		return nil
+	}
+}
+
 // RegisterHTTP mounts all routes under /api/v1, applying authentication to every
 // route except login, and the admin guard to user-management routes.
 func (h *Handlers) RegisterHTTP(r chi.Router) {
@@ -112,12 +128,24 @@ func (h *Handlers) RegisterHTTP(r chi.Router) {
 				r.Get("/auth/me", h.Auth.Me)
 			}
 
-			// User management is restricted to admin-capable users.
-			if h.User != nil {
+			// User management and settings writes are restricted to admins.
+			if h.User != nil || h.Settings != nil {
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireAdmin)
-					h.User.Register(r)
+					if h.User != nil {
+						h.User.Register(r)
+					}
+					if h.Settings != nil {
+						h.Settings.RegisterWrite(r)
+					}
 				})
+			}
+
+			if h.Settings != nil {
+				h.Settings.RegisterRead(r)
+			}
+			if h.Invoice != nil {
+				h.Invoice.Register(r)
 			}
 
 			if h.Brand != nil {

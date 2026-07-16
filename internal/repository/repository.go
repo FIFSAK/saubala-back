@@ -9,6 +9,7 @@ import (
 	"github.com/FIFSAK/saubala-back/internal/domain/position"
 	"github.com/FIFSAK/saubala-back/internal/domain/receipt"
 	"github.com/FIFSAK/saubala-back/internal/domain/release"
+	"github.com/FIFSAK/saubala-back/internal/domain/settings"
 	"github.com/FIFSAK/saubala-back/internal/domain/user"
 	mongorepo "github.com/FIFSAK/saubala-back/internal/repository/mongo"
 	"github.com/FIFSAK/saubala-back/pkg/store"
@@ -28,6 +29,7 @@ type Repositories struct {
 	Contract   contract.Repository
 	Release    release.Repository
 	Adjustment adjustment.Repository
+	Settings   settings.Repository
 }
 
 // New builds the repositories aggregate from the given options.
@@ -65,6 +67,7 @@ func WithMongoStore(ctx context.Context, m *store.Mongo) Configuration {
 		r.Contract = mongorepo.NewContractRepository(db)
 		r.Release = mongorepo.NewReleaseRepository(db)
 		r.Adjustment = mongorepo.NewAdjustmentRepository(db)
+		r.Settings = mongorepo.NewSettingsRepository(db)
 		return nil
 	}
 }

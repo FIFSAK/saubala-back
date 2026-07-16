@@ -104,6 +104,8 @@ func (app *App) initializeServices(ctx context.Context) error {
 		service.WithReceiptService(),
 		service.WithContractService(),
 		service.WithReleaseService(),
+		service.WithSettingsService(),
+		service.WithInvoiceService(),
 	)
 	if err != nil {
 		app.logger.Error("service init error", zap.Error(err))
@@ -114,6 +116,12 @@ func (app *App) initializeServices(ctx context.Context) error {
 	// Seed the super administrator account if it does not exist yet.
 	if err := services.User.EnsureSuperAdmin(ctx, app.configs.SuperAdmin.Email, app.configs.SuperAdmin.Password); err != nil {
 		app.logger.Error("super admin seed error", zap.Error(err))
+		return err
+	}
+
+	// Seed the organization settings singleton with the customer's defaults.
+	if err := services.Settings.EnsureDefault(ctx); err != nil {
+		app.logger.Error("settings seed error", zap.Error(err))
 		return err
 	}
 
@@ -157,6 +165,8 @@ func (app *App) initializeHandlers() error {
 		handler.WithReceiptHandler(),
 		handler.WithContractHandler(),
 		handler.WithReleaseHandler(),
+		handler.WithSettingsHandler(),
+		handler.WithInvoiceHandler(),
 	)
 	if err != nil {
 		app.logger.Error("handler init error", zap.Error(err))

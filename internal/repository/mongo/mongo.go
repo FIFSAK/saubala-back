@@ -17,6 +17,8 @@ const (
 	collReleases  = "releases"
 
 	collAdjustments = "adjustments"
+
+	collSettings = "settings"
 )
 
 // caseInsensitiveContains builds a case-insensitive "contains" regex condition

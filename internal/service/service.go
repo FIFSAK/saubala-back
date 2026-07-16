@@ -5,9 +5,11 @@ import (
 	authsvc "github.com/FIFSAK/saubala-back/internal/service/auth"
 	brandsvc "github.com/FIFSAK/saubala-back/internal/service/brand"
 	contractsvc "github.com/FIFSAK/saubala-back/internal/service/contract"
+	invoicesvc "github.com/FIFSAK/saubala-back/internal/service/invoice"
 	positionsvc "github.com/FIFSAK/saubala-back/internal/service/position"
 	receiptsvc "github.com/FIFSAK/saubala-back/internal/service/receipt"
 	releasesvc "github.com/FIFSAK/saubala-back/internal/service/release"
+	settingssvc "github.com/FIFSAK/saubala-back/internal/service/settings"
 	usersvc "github.com/FIFSAK/saubala-back/internal/service/user"
 	"github.com/FIFSAK/saubala-back/pkg/auth"
 )
@@ -32,6 +34,8 @@ type Services struct {
 	Receipt  *receiptsvc.Service
 	Contract *contractsvc.Service
 	Release  *releasesvc.Service
+	Settings *settingssvc.Service
+	Invoice  *invoicesvc.Service
 }
 
 // New builds the services aggregate from the given options.
@@ -104,6 +108,25 @@ func WithReleaseService() Configuration {
 			s.deps.Repositories.Release,
 			s.deps.Repositories.Contract,
 			s.deps.Repositories.Position,
+		)
+		return nil
+	}
+}
+
+func WithSettingsService() Configuration {
+	return func(s *Services) error {
+		s.Settings = settingssvc.NewService(s.deps.Repositories.Settings)
+		return nil
+	}
+}
+
+func WithInvoiceService() Configuration {
+	return func(s *Services) error {
+		s.Invoice = invoicesvc.NewService(
+			s.deps.Repositories.Release,
+			s.deps.Repositories.Contract,
+			s.deps.Repositories.Position,
+			s.deps.Repositories.Settings,
 		)
 		return nil
 	}
