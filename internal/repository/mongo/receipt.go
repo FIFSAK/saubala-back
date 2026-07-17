@@ -19,12 +19,15 @@ type receiptLineDoc struct {
 }
 
 type receiptDoc struct {
-	ID        string           `bson:"_id"`
-	Date      time.Time        `bson:"date"`
-	Note      string           `bson:"note"`
-	Lines     []receiptLineDoc `bson:"lines"`
-	CreatedBy string           `bson:"created_by"`
-	CreatedAt time.Time        `bson:"created_at"`
+	ID            string           `bson:"_id"`
+	Date          time.Time        `bson:"date"`
+	Note          string           `bson:"note"`
+	SupplierID    string           `bson:"supplier_id,omitempty"`
+	Counterparty  string           `bson:"counterparty,omitempty"`
+	InvoiceAmount int64            `bson:"invoice_amount,omitempty"`
+	Lines         []receiptLineDoc `bson:"lines"`
+	CreatedBy     string           `bson:"created_by"`
+	CreatedAt     time.Time        `bson:"created_at"`
 }
 
 func toReceiptDoc(r *receipt.Receipt) receiptDoc {
@@ -33,12 +36,15 @@ func toReceiptDoc(r *receipt.Receipt) receiptDoc {
 		lines[i] = receiptLineDoc{PositionID: l.PositionID, Quantity: l.Quantity}
 	}
 	return receiptDoc{
-		ID:        r.ID,
-		Date:      r.Date,
-		Note:      r.Note,
-		Lines:     lines,
-		CreatedBy: r.CreatedBy,
-		CreatedAt: r.CreatedAt,
+		ID:            r.ID,
+		Date:          r.Date,
+		Note:          r.Note,
+		SupplierID:    r.SupplierID,
+		Counterparty:  r.Counterparty,
+		InvoiceAmount: r.InvoiceAmount,
+		Lines:         lines,
+		CreatedBy:     r.CreatedBy,
+		CreatedAt:     r.CreatedAt,
 	}
 }
 
@@ -48,12 +54,15 @@ func (d receiptDoc) toDomain() *receipt.Receipt {
 		lines[i] = receipt.Line{PositionID: l.PositionID, Quantity: l.Quantity}
 	}
 	return &receipt.Receipt{
-		ID:        d.ID,
-		Date:      d.Date,
-		Note:      d.Note,
-		Lines:     lines,
-		CreatedBy: d.CreatedBy,
-		CreatedAt: d.CreatedAt,
+		ID:            d.ID,
+		Date:          d.Date,
+		Note:          d.Note,
+		SupplierID:    d.SupplierID,
+		Counterparty:  d.Counterparty,
+		InvoiceAmount: d.InvoiceAmount,
+		Lines:         lines,
+		CreatedBy:     d.CreatedBy,
+		CreatedAt:     d.CreatedAt,
 	}
 }
 
@@ -91,6 +100,9 @@ func (r *ReceiptRepository) List(ctx context.Context, f receipt.Filter) ([]recei
 	filter := bson.M{}
 	if f.PositionID != "" {
 		filter["lines.position_id"] = f.PositionID
+	}
+	if f.SupplierID != "" {
+		filter["supplier_id"] = f.SupplierID
 	}
 	if f.DateFrom != nil || f.DateTo != nil {
 		date := bson.M{}
@@ -147,4 +159,39 @@ func (r *ReceiptRepository) ListByPosition(ctx context.Context, positionID strin
 		receipts[i] = *d.toDomain()
 	}
 	return receipts, nil
+}
+
+func (r *ReceiptRepository) CountBySupplier(ctx context.Context, supplierID string) (int64, error) {
+	return r.coll.CountDocuments(ctx, bson.M{"supplier_id": supplierID})
+}
+
+func (r *ReceiptRepository) InvoiceTotalBySupplier(ctx context.Context, supplierIDs []string) (map[string]int64, error) {
+	if len(supplierIDs) == 0 {
+		return map[string]int64{}, nil
+	}
+	pipeline := mongo.Pipeline{
+		bson.D{{Key: "$match", Value: bson.M{"supplier_id": bson.M{"$in": supplierIDs}}}},
+		bson.D{{Key: "$group", Value: bson.M{
+			"_id":   "$supplier_id",
+			"total": bson.M{"$sum": "$invoice_amount"},
+		}}},
+	}
+	cur, err := r.coll.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	var rows []struct {
+		ID    string `bson:"_id"`
+		Total int64  `bson:"total"`
+	}
+	if err := cur.All(ctx, &rows); err != nil {
+		return nil, err
+	}
+	out := make(map[string]int64, len(rows))
+	for _, row := range rows {
+		out[row.ID] = row.Total
+	}
+	return out, nil
 }

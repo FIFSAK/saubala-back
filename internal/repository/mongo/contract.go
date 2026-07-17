@@ -16,21 +16,24 @@ import (
 type contractLineDoc struct {
 	ID              string `bson:"id"`
 	PositionID      string `bson:"position_id"`
+	ContractName    string `bson:"contract_name,omitempty"`
+	NTIN            string `bson:"ntin,omitempty"`
 	PlannedQuantity int    `bson:"planned_quantity"`
 	PlannedPrice    *int64 `bson:"planned_price"`
 }
 
 type contractDoc struct {
-	ID              string            `bson:"_id"`
-	Name            string            `bson:"name"`
-	CustomerAddress string            `bson:"customer_address"`
-	ContractNumber  string            `bson:"contract_number"`
-	ContractDate    time.Time         `bson:"contract_date"`
-	BIN             string            `bson:"bin"`
-	Lines           []contractLineDoc `bson:"lines"`
-	CreatedBy       string            `bson:"created_by"`
-	CreatedAt       time.Time         `bson:"created_at"`
-	UpdatedAt       time.Time         `bson:"updated_at"`
+	ID                   string            `bson:"_id"`
+	Name                 string            `bson:"name"`
+	CustomerOfficialName string            `bson:"customer_official_name,omitempty"`
+	CustomerAddress      string            `bson:"customer_address"`
+	ContractNumber       string            `bson:"contract_number"`
+	ContractDate         time.Time         `bson:"contract_date"`
+	BIN                  string            `bson:"bin"`
+	Lines                []contractLineDoc `bson:"lines"`
+	CreatedBy            string            `bson:"created_by"`
+	CreatedAt            time.Time         `bson:"created_at"`
+	UpdatedAt            time.Time         `bson:"updated_at"`
 }
 
 func toContractDoc(c *contract.Contract) contractDoc {
@@ -39,21 +42,24 @@ func toContractDoc(c *contract.Contract) contractDoc {
 		lines[i] = contractLineDoc{
 			ID:              l.ID,
 			PositionID:      l.PositionID,
+			ContractName:    l.ContractName,
+			NTIN:            l.NTIN,
 			PlannedQuantity: l.PlannedQuantity,
 			PlannedPrice:    l.PlannedPrice,
 		}
 	}
 	return contractDoc{
-		ID:              c.ID,
-		Name:            c.Name,
-		CustomerAddress: c.CustomerAddress,
-		ContractNumber:  c.ContractNumber,
-		ContractDate:    c.ContractDate,
-		BIN:             c.BIN,
-		Lines:           lines,
-		CreatedBy:       c.CreatedBy,
-		CreatedAt:       c.CreatedAt,
-		UpdatedAt:       c.UpdatedAt,
+		ID:                   c.ID,
+		Name:                 c.Name,
+		CustomerOfficialName: c.CustomerOfficialName,
+		CustomerAddress:      c.CustomerAddress,
+		ContractNumber:       c.ContractNumber,
+		ContractDate:         c.ContractDate,
+		BIN:                  c.BIN,
+		Lines:                lines,
+		CreatedBy:            c.CreatedBy,
+		CreatedAt:            c.CreatedAt,
+		UpdatedAt:            c.UpdatedAt,
 	}
 }
 
@@ -63,21 +69,24 @@ func (d contractDoc) toDomain() *contract.Contract {
 		lines[i] = contract.Line{
 			ID:              l.ID,
 			PositionID:      l.PositionID,
+			ContractName:    l.ContractName,
+			NTIN:            l.NTIN,
 			PlannedQuantity: l.PlannedQuantity,
 			PlannedPrice:    l.PlannedPrice,
 		}
 	}
 	return &contract.Contract{
-		ID:              d.ID,
-		Name:            d.Name,
-		CustomerAddress: d.CustomerAddress,
-		ContractNumber:  d.ContractNumber,
-		ContractDate:    d.ContractDate,
-		BIN:             d.BIN,
-		Lines:           lines,
-		CreatedBy:       d.CreatedBy,
-		CreatedAt:       d.CreatedAt,
-		UpdatedAt:       d.UpdatedAt,
+		ID:                   d.ID,
+		Name:                 d.Name,
+		CustomerOfficialName: d.CustomerOfficialName,
+		CustomerAddress:      d.CustomerAddress,
+		ContractNumber:       d.ContractNumber,
+		ContractDate:         d.ContractDate,
+		BIN:                  d.BIN,
+		Lines:                lines,
+		CreatedBy:            d.CreatedBy,
+		CreatedAt:            d.CreatedAt,
+		UpdatedAt:            d.UpdatedAt,
 	}
 }
 
@@ -149,13 +158,14 @@ func (r *ContractRepository) Update(ctx context.Context, c *contract.Contract) e
 	c.UpdatedAt = time.Now().UTC()
 	doc := toContractDoc(c)
 	res, err := r.coll.UpdateByID(ctx, c.ID, bson.M{"$set": bson.M{
-		"name":             doc.Name,
-		"customer_address": doc.CustomerAddress,
-		"contract_number":  doc.ContractNumber,
-		"contract_date":    doc.ContractDate,
-		"bin":              doc.BIN,
-		"lines":            doc.Lines,
-		"updated_at":       doc.UpdatedAt,
+		"name":                   doc.Name,
+		"customer_official_name": doc.CustomerOfficialName,
+		"customer_address":       doc.CustomerAddress,
+		"contract_number":        doc.ContractNumber,
+		"contract_date":          doc.ContractDate,
+		"bin":                    doc.BIN,
+		"lines":                  doc.Lines,
+		"updated_at":             doc.UpdatedAt,
 	}})
 	if store.IsDuplicateKey(err) {
 		return store.ErrDuplicate

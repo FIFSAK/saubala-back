@@ -24,7 +24,8 @@ func (h *InvoiceHandler) Register(r chi.Router) {
 	r.Post("/releases/{id}/invoice", h.Generate)
 }
 
-// generateInvoiceRequest carries the four manually-entered header fields.
+// generateInvoiceRequest carries optional header overrides; empty fields fall
+// back to the data stored on the release at creation time.
 type generateInvoiceRequest struct {
 	DocumentNumber   string    `json:"document_number"`
 	DocumentDate     time.Time `json:"document_date"`
@@ -33,7 +34,8 @@ type generateInvoiceRequest struct {
 }
 
 // Generate builds the waybill for a release and streams it back as an XLSX or PDF
-// download. The format is chosen via ?format=xlsx|pdf (default xlsx).
+// download. The format is chosen via ?format=xlsx|pdf (default xlsx). The body is
+// optional — the header data stored on the release is used by default.
 func (h *InvoiceHandler) Generate(w http.ResponseWriter, r *http.Request) {
 	format := invoicesvc.Format(r.URL.Query().Get("format"))
 	if format == "" {
@@ -41,9 +43,11 @@ func (h *InvoiceHandler) Generate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req generateInvoiceRequest
-	if err := web.Decode(r, &req); err != nil {
-		web.WriteError(w, err)
-		return
+	if r.ContentLength != 0 {
+		if err := web.Decode(r, &req); err != nil {
+			web.WriteError(w, err)
+			return
+		}
 	}
 
 	out, err := h.invoices.Generate(r.Context(), invoicesvc.GenerateInput{

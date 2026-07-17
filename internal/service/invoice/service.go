@@ -1,6 +1,8 @@
 // Package invoice implements the use case of generating a release waybill
 // (Форма З-2) for an existing release, in XLSX or PDF. Generation is stateless:
-// nothing is persisted; the manual header fields are supplied per request.
+// nothing is persisted. The header data (document number, recipient, sender
+// organization) is taken from the release itself — it is captured at release
+// time — while the request fields remain as optional overrides.
 package invoice
 
 import (
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/FIFSAK/saubala-back/internal/domain/contract"
+	orgdom "github.com/FIFSAK/saubala-back/internal/domain/org"
 	"github.com/FIFSAK/saubala-back/internal/domain/position"
 	"github.com/FIFSAK/saubala-back/internal/domain/release"
 	settingsdom "github.com/FIFSAK/saubala-back/internal/domain/settings"
@@ -19,17 +22,18 @@ import (
 	"github.com/FIFSAK/saubala-back/pkg/web"
 )
 
-// Service generates release waybills from stored releases plus per-request
-// manual header fields and the organization settings.
+// Service generates release waybills from stored releases, the sender
+// organization chosen at release time and the invoice defaults.
 type Service struct {
 	releases  release.Repository
 	contracts contract.Repository
 	positions position.Repository
+	orgs      orgdom.Repository
 	settings  settingsdom.Repository
 }
 
-func NewService(releases release.Repository, contracts contract.Repository, positions position.Repository, settings settingsdom.Repository) *Service {
-	return &Service{releases: releases, contracts: contracts, positions: positions, settings: settings}
+func NewService(releases release.Repository, contracts contract.Repository, positions position.Repository, orgs orgdom.Repository, settings settingsdom.Repository) *Service {
+	return &Service{releases: releases, contracts: contracts, positions: positions, orgs: orgs, settings: settings}
 }
 
 // Format is the output document format.
@@ -40,8 +44,9 @@ const (
 	FormatPDF  Format = "pdf"
 )
 
-// GenerateInput carries the release id and the four manually-entered header
-// fields (document number, date, recipient name and address).
+// GenerateInput carries the release id, the output format, and optional header
+// overrides. Empty override fields fall back to the data stored on the release
+// (and, for the recipient, to the contract).
 type GenerateInput struct {
 	ReleaseID        string
 	Format           Format
@@ -60,8 +65,8 @@ type GenerateOutput struct {
 
 // Generate builds and renders the waybill for the given release.
 func (s *Service) Generate(ctx context.Context, in GenerateInput) (*GenerateOutput, error) {
-	if err := validate(in); err != nil {
-		return nil, err
+	if in.Format != FormatXLSX && in.Format != FormatPDF {
+		return nil, web.BadRequest("формат должен быть «xlsx» или «pdf»")
 	}
 
 	rel, err := s.releases.GetByID(ctx, in.ReleaseID)
@@ -72,14 +77,26 @@ func (s *Service) Generate(ctx context.Context, in GenerateInput) (*GenerateOutp
 		return nil, err
 	}
 
-	// Contract lines carry the planned (sale) price per line; missing contract is
-	// tolerated — prices then fall back to the position/release cost.
+	// Contract lines carry the planned (sale) price and the per-contract product
+	// name; a missing contract is tolerated — prices then fall back to the
+	// position/release cost and names to the position.
 	plannedPrice := make(map[string]*int64)
-	if c, err := s.contracts.GetByID(ctx, rel.ContractID); err == nil {
-		for _, cl := range c.Lines {
-			plannedPrice[cl.ID] = cl.PlannedPrice
+	contractName := make(map[string]string)
+	var c *contract.Contract
+	if rel.ContractID != "" {
+		c, err = s.contracts.GetByID(ctx, rel.ContractID)
+		if err == nil {
+			for _, cl := range c.Lines {
+				plannedPrice[cl.ID] = cl.PlannedPrice
+				contractName[cl.ID] = cl.ContractName
+			}
+		} else if !errors.Is(err, store.ErrorNotFound) {
+			return nil, err
 		}
-	} else if !errors.Is(err, store.ErrorNotFound) {
+	}
+
+	header, err := resolveHeader(in, rel, c)
+	if err != nil {
 		return nil, err
 	}
 
@@ -92,28 +109,32 @@ func (s *Service) Generate(ctx context.Context, in GenerateInput) (*GenerateOutp
 	if err != nil {
 		return nil, err
 	}
+	seller, err := s.seller(ctx, rel.OrganizationID)
+	if err != nil {
+		return nil, err
+	}
 
 	lines := make([]invoice.LineInput, len(rel.Lines))
 	for i, l := range rel.Lines {
 		pos := posByID[l.PositionID]
 		lines[i] = invoice.LineInput{
-			Name:      lineName(set.LineDescriptionPrefix, pos, l.PositionID),
+			Name:      lineName(set.LineDescriptionPrefix, contractName[l.ContractLineID], pos, l.PositionID),
 			Unit:      set.DefaultUnit,
 			Quantity:  l.Quantity,
-			UnitPrice: unitPrice(plannedPrice[l.ContractLineID], pos, l.UnitCost),
+			UnitPrice: unitPrice(l, plannedPrice[l.ContractLineID], pos),
 		}
 	}
 
 	inv := invoice.Build(invoice.BuildInput{
-		DocumentNumber:       in.DocumentNumber,
-		DocumentDate:         in.DocumentDate,
-		SellerName:           set.OrgName,
-		SellerBIN:            set.BIN,
-		ResponsibleForSupply: set.ResponsibleForSupply,
-		Director:             set.Director,
-		Accountant:           set.Accountant,
-		RecipientName:        in.RecipientName,
-		RecipientAddress:     in.RecipientAddress,
+		DocumentNumber:       header.number,
+		DocumentDate:         header.date,
+		SellerName:           seller.Name,
+		SellerBIN:            seller.BIN,
+		ResponsibleForSupply: seller.ResponsibleForSupply,
+		Director:             seller.Director,
+		Accountant:           seller.Accountant,
+		RecipientName:        header.recipientName,
+		RecipientAddress:     header.recipientAddress,
 		VATRatePercent:       set.VATRatePercent,
 		Lines:                lines,
 	})
@@ -121,23 +142,79 @@ func (s *Service) Generate(ctx context.Context, in GenerateInput) (*GenerateOutp
 	return render(inv, in.Format)
 }
 
-func validate(in GenerateInput) error {
-	if in.Format != FormatXLSX && in.Format != FormatPDF {
-		return web.BadRequest("формат должен быть «xlsx» или «pdf»")
+type header struct {
+	number           string
+	date             time.Time
+	recipientName    string
+	recipientAddress string
+}
+
+// resolveHeader merges the request overrides with the data stored on the
+// release, falling back to the contract for the recipient.
+func resolveHeader(in GenerateInput, rel *release.Release, c *contract.Contract) (*header, error) {
+	h := &header{
+		number:           strings.TrimSpace(in.DocumentNumber),
+		date:             in.DocumentDate,
+		recipientName:    strings.TrimSpace(in.RecipientName),
+		recipientAddress: strings.TrimSpace(in.RecipientAddress),
 	}
-	if strings.TrimSpace(in.DocumentNumber) == "" {
-		return web.BadRequest("номер документа обязателен")
+	if h.number == "" {
+		h.number = rel.DocumentNumber
 	}
-	if in.DocumentDate.IsZero() {
-		return web.BadRequest("дата документа обязательна")
+	if h.date.IsZero() {
+		h.date = rel.Date
 	}
-	if strings.TrimSpace(in.RecipientName) == "" {
-		return web.BadRequest("наименование получателя обязательно")
+	if h.recipientName == "" {
+		h.recipientName = rel.RecipientName
 	}
-	if strings.TrimSpace(in.RecipientAddress) == "" {
-		return web.BadRequest("адрес получателя обязателен")
+	if h.recipientAddress == "" {
+		h.recipientAddress = rel.RecipientAddress
 	}
-	return nil
+	if c != nil {
+		if h.recipientName == "" {
+			// The official customer name wins over the short working caption.
+			h.recipientName = c.CustomerOfficialName
+			if h.recipientName == "" {
+				h.recipientName = c.Name
+			}
+		}
+		if h.recipientAddress == "" {
+			h.recipientAddress = c.CustomerAddress
+		}
+	}
+	if h.number == "" {
+		return nil, web.BadRequest("номер накладной не указан — заполните его в отгрузке или передайте в запросе")
+	}
+	if h.recipientName == "" {
+		return nil, web.BadRequest("наименование получателя обязательно")
+	}
+	if h.recipientAddress == "" {
+		return nil, web.BadRequest("адрес получателя обязателен")
+	}
+	return h, nil
+}
+
+// seller resolves the sender organization chosen at release time, falling back
+// to the first configured organization (and, if none exist, to the seeded
+// default) for releases persisted before the choice existed.
+func (s *Service) seller(ctx context.Context, organizationID string) (*orgdom.Organization, error) {
+	if organizationID != "" {
+		o, err := s.orgs.GetByID(ctx, organizationID)
+		if err == nil {
+			return o, nil
+		}
+		if !errors.Is(err, store.ErrorNotFound) {
+			return nil, err
+		}
+	}
+	list, err := s.orgs.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(list) > 0 {
+		return &list[0], nil
+	}
+	return orgdom.Default(), nil
 }
 
 // positionsByID batch-loads the positions referenced by the release lines.
@@ -164,7 +241,7 @@ func (s *Service) positionsByID(ctx context.Context, lines []release.Line) (map[
 
 // currentSettings returns the stored settings, falling back to the seeded
 // defaults when the singleton is somehow absent.
-func (s *Service) currentSettings(ctx context.Context) (*settingsdom.Organization, error) {
+func (s *Service) currentSettings(ctx context.Context) (*settingsdom.Settings, error) {
 	set, err := s.settings.Get(ctx)
 	if err != nil {
 		if errors.Is(err, store.ErrorNotFound) {
@@ -175,29 +252,54 @@ func (s *Service) currentSettings(ctx context.Context) (*settingsdom.Organizatio
 	return set, nil
 }
 
-// unitPrice picks the invoice unit price: the contract line's planned price when
-// present, else the position purchase price, else the release-line unit cost.
-func unitPrice(planned *int64, pos *position.Position, releaseCost int64) int64 {
+// unitPrice picks the invoice unit price: the sale price stored at release time
+// when present, else — for contract releases persisted before prices were
+// stored — the contract line's planned price, the position purchase price, or
+// the release-line unit cost. Free-release lines stay at 0.
+func unitPrice(l release.Line, planned *int64, pos *position.Position) int64 {
+	if l.UnitPrice > 0 {
+		return l.UnitPrice
+	}
+	if l.ContractLineID == "" {
+		return 0
+	}
 	if planned != nil {
 		return *planned
 	}
 	if pos != nil {
 		return pos.PurchasePrice
 	}
-	return releaseCost
+	return l.UnitCost
 }
 
-// lineName renders the «наименование, характеристика» text, wrapping the position
-// name with the configured prefix and its expiry date.
-func lineName(prefix string, pos *position.Position, fallbackID string) string {
-	if pos == nil {
+// lineName renders the «наименование, характеристика» text, wrapping the product
+// name with the configured prefix and the batch expiry date. The name written in
+// the contract wins over the position's own contract name, then its plain name.
+func lineName(prefix, contractLineName string, pos *position.Position, fallbackID string) string {
+	name := strings.TrimSpace(contractLineName)
+	expiry := ""
+	if pos != nil {
+		if name == "" {
+			name = strings.TrimSpace(pos.ContractName)
+		}
+		if name == "" {
+			name = pos.Name
+		}
+		expiry = pos.ExpiryDate.Format("02.01.2006")
+	}
+	if name == "" {
 		return fallbackID
 	}
-	expiry := pos.ExpiryDate.Format("02.01.2006")
-	if strings.TrimSpace(prefix) == "" {
-		return fmt.Sprintf("%s (Срок годности: %s)", pos.Name, expiry)
+	if expiry == "" {
+		if strings.TrimSpace(prefix) == "" {
+			return name
+		}
+		return fmt.Sprintf("%s(%s)", prefix, name)
 	}
-	return fmt.Sprintf("%s(%s, Срок годности: %s)", prefix, pos.Name, expiry)
+	if strings.TrimSpace(prefix) == "" {
+		return fmt.Sprintf("%s (Срок годности: %s)", name, expiry)
+	}
+	return fmt.Sprintf("%s(%s, Срок годности: %s)", prefix, name, expiry)
 }
 
 // render dispatches to the format-specific renderer and attaches download

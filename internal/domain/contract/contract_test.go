@@ -27,7 +27,7 @@ func validLines() []Line {
 func TestNew(t *testing.T) {
 	date := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	c, err := New("Plan", "Almaty", "C-1", date, "123456789012", "user-1", validLines())
+	c, err := New("Plan", "ГКП «План»", "Almaty", "C-1", date, "123456789012", "user-1", validLines())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -42,17 +42,19 @@ func TestNew(t *testing.T) {
 		name string
 		fn   func() (*Contract, error)
 	}{
-		{"empty name", func() (*Contract, error) { return New("", "a", "C-1", date, "123456789012", "u", validLines()) }},
-		{"empty address", func() (*Contract, error) { return New("n", "", "C-1", date, "123456789012", "u", validLines()) }},
-		{"empty number", func() (*Contract, error) { return New("n", "a", "", date, "123456789012", "u", validLines()) }},
-		{"zero date", func() (*Contract, error) { return New("n", "a", "C-1", time.Time{}, "123456789012", "u", validLines()) }},
-		{"bad bin", func() (*Contract, error) { return New("n", "a", "C-1", date, "123", "u", validLines()) }},
-		{"no lines", func() (*Contract, error) { return New("n", "a", "C-1", date, "123456789012", "u", nil) }},
+		{"empty name", func() (*Contract, error) { return New("", "", "a", "C-1", date, "123456789012", "u", validLines()) }},
+		{"empty address", func() (*Contract, error) { return New("n", "", "", "C-1", date, "123456789012", "u", validLines()) }},
+		{"empty number", func() (*Contract, error) { return New("n", "", "a", "", date, "123456789012", "u", validLines()) }},
+		{"zero date", func() (*Contract, error) {
+			return New("n", "", "a", "C-1", time.Time{}, "123456789012", "u", validLines())
+		}},
+		{"bad bin", func() (*Contract, error) { return New("n", "", "a", "C-1", date, "123", "u", validLines()) }},
+		{"no lines", func() (*Contract, error) { return New("n", "", "a", "C-1", date, "123456789012", "u", nil) }},
 		{"bad qty", func() (*Contract, error) {
-			return New("n", "a", "C-1", date, "123456789012", "u", []Line{{PositionID: "p", PlannedQuantity: 0}})
+			return New("n", "", "a", "C-1", date, "123456789012", "u", []Line{{PositionID: "p", PlannedQuantity: 0}})
 		}},
 		{"empty position", func() (*Contract, error) {
-			return New("n", "a", "C-1", date, "123456789012", "u", []Line{{PositionID: "", PlannedQuantity: 1}})
+			return New("n", "", "a", "C-1", date, "123456789012", "u", []Line{{PositionID: "", PlannedQuantity: 1}})
 		}},
 	}
 	for _, tc := range bad {

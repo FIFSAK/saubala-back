@@ -12,32 +12,41 @@ import (
 var binRe = regexp.MustCompile(`^\d{12}$`)
 
 // Line is a planned row of a contract's appendix: how much of a given position is
-// planned to be released over the contract period.
+// planned to be released over the contract period. ContractName is the product
+// name as written in this contract (used on waybills instead of the warehouse
+// name); NTIN is the national product code used when issuing acts/ЭСФ. Both are
+// optional and contract-specific — the same position may be named differently in
+// different contracts.
 type Line struct {
 	ID              string
 	PositionID      string
+	ContractName    string
+	NTIN            string
 	PlannedQuantity int
 	PlannedPrice    *int64 // per unit, tiyn; optional
 }
 
 // Contract is a yearly plan of what should be released/written off. Creating a
 // contract does not touch stock — releases draw against it over time.
+// CustomerOfficialName is the full legal name of the customer organization
+// (used on waybills/acts); Name stays the short working caption.
 type Contract struct {
-	ID              string
-	Name            string
-	CustomerAddress string
-	ContractNumber  string
-	ContractDate    time.Time
-	BIN             string
-	Lines           []Line
-	CreatedBy       string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                   string
+	Name                 string
+	CustomerOfficialName string // optional
+	CustomerAddress      string
+	ContractNumber       string
+	ContractDate         time.Time
+	BIN                  string
+	Lines                []Line
+	CreatedBy            string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 // New constructs a validated contract, generating the contract ID and a stable
 // ID for every appendix line.
-func New(name, customerAddress, contractNumber string, contractDate time.Time, bin string, createdBy string, lines []Line) (*Contract, error) {
+func New(name, customerOfficialName, customerAddress, contractNumber string, contractDate time.Time, bin string, createdBy string, lines []Line) (*Contract, error) {
 	if err := validateHeader(name, customerAddress, contractNumber, contractDate, bin); err != nil {
 		return nil, err
 	}
@@ -48,16 +57,17 @@ func New(name, customerAddress, contractNumber string, contractDate time.Time, b
 
 	now := time.Now().UTC()
 	return &Contract{
-		ID:              uuid.NewString(),
-		Name:            strings.TrimSpace(name),
-		CustomerAddress: strings.TrimSpace(customerAddress),
-		ContractNumber:  strings.TrimSpace(contractNumber),
-		ContractDate:    contractDate.UTC(),
-		BIN:             strings.TrimSpace(bin),
-		Lines:           normalized,
-		CreatedBy:       createdBy,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:                   uuid.NewString(),
+		Name:                 strings.TrimSpace(name),
+		CustomerOfficialName: strings.TrimSpace(customerOfficialName),
+		CustomerAddress:      strings.TrimSpace(customerAddress),
+		ContractNumber:       strings.TrimSpace(contractNumber),
+		ContractDate:         contractDate.UTC(),
+		BIN:                  strings.TrimSpace(bin),
+		Lines:                normalized,
+		CreatedBy:            createdBy,
+		CreatedAt:            now,
+		UpdatedAt:            now,
 	}, nil
 }
 
@@ -112,6 +122,8 @@ func NormalizeLines(lines []Line) ([]Line, error) {
 		out[i] = Line{
 			ID:              id,
 			PositionID:      strings.TrimSpace(l.PositionID),
+			ContractName:    strings.TrimSpace(l.ContractName),
+			NTIN:            strings.TrimSpace(l.NTIN),
 			PlannedQuantity: l.PlannedQuantity,
 			PlannedPrice:    l.PlannedPrice,
 		}

@@ -31,6 +31,7 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		},
 		collPositions: {
 			{Keys: bson.D{{Key: "brand_id", Value: 1}}, Options: options.Index().SetName("idx_brand_id")},
+			{Keys: bson.D{{Key: "supplier_id", Value: 1}}, Options: options.Index().SetName("idx_supplier_id")},
 			{Keys: bson.D{{Key: "lot_number", Value: 1}}, Options: options.Index().SetName("idx_lot_number")},
 			{Keys: bson.D{{Key: "expiry_date", Value: 1}}, Options: options.Index().SetName("idx_expiry_date")},
 		},
@@ -44,11 +45,16 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		},
 		collReceipts: {
 			{Keys: bson.D{{Key: "lines.position_id", Value: 1}}, Options: options.Index().SetName("idx_lines_position_id")},
+			{Keys: bson.D{{Key: "supplier_id", Value: 1}}, Options: options.Index().SetName("idx_supplier_id")},
 			{Keys: bson.D{{Key: "date", Value: 1}}, Options: options.Index().SetName("idx_date")},
+		},
+		collSuppliers: {
+			{Keys: bson.D{{Key: "name", Value: 1}}, Options: options.Index().SetName("idx_name")},
 		},
 		collReleases: {
 			{Keys: bson.D{{Key: "contract_id", Value: 1}}, Options: options.Index().SetName("idx_contract_id")},
 			{Keys: bson.D{{Key: "date", Value: 1}}, Options: options.Index().SetName("idx_date")},
+			{Keys: bson.D{{Key: "organization_id", Value: 1}}, Options: options.Index().SetName("idx_organization_id")},
 		},
 		collAdjustments: {
 			{Keys: bson.D{{Key: "position_id", Value: 1}}, Options: options.Index().SetName("idx_position_id")},

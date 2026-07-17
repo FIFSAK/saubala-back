@@ -32,6 +32,8 @@ type Handlers struct {
 	Contract *rest.ContractHandler
 	Release  *rest.ReleaseHandler
 	Settings *rest.SettingsHandler
+	Org      *rest.OrgHandler
+	Supplier *rest.SupplierHandler
 	Invoice  *rest.InvoiceHandler
 }
 
@@ -102,6 +104,20 @@ func WithSettingsHandler() Configuration {
 	}
 }
 
+func WithOrgHandler() Configuration {
+	return func(h *Handlers) error {
+		h.Org = rest.NewOrgHandler(h.deps.Services.Org)
+		return nil
+	}
+}
+
+func WithSupplierHandler() Configuration {
+	return func(h *Handlers) error {
+		h.Supplier = rest.NewSupplierHandler(h.deps.Services.Supplier)
+		return nil
+	}
+}
+
 func WithInvoiceHandler() Configuration {
 	return func(h *Handlers) error {
 		h.Invoice = rest.NewInvoiceHandler(h.deps.Services.Invoice)
@@ -128,8 +144,9 @@ func (h *Handlers) RegisterHTTP(r chi.Router) {
 				r.Get("/auth/me", h.Auth.Me)
 			}
 
-			// User management and settings writes are restricted to admins.
-			if h.User != nil || h.Settings != nil {
+			// User management, settings and organization writes are restricted
+			// to admins.
+			if h.User != nil || h.Settings != nil || h.Org != nil {
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireAdmin)
 					if h.User != nil {
@@ -138,11 +155,17 @@ func (h *Handlers) RegisterHTTP(r chi.Router) {
 					if h.Settings != nil {
 						h.Settings.RegisterWrite(r)
 					}
+					if h.Org != nil {
+						h.Org.RegisterWrite(r)
+					}
 				})
 			}
 
 			if h.Settings != nil {
 				h.Settings.RegisterRead(r)
+			}
+			if h.Org != nil {
+				h.Org.RegisterRead(r)
 			}
 			if h.Invoice != nil {
 				h.Invoice.Register(r)
@@ -150,6 +173,9 @@ func (h *Handlers) RegisterHTTP(r chi.Router) {
 
 			if h.Brand != nil {
 				h.Brand.Register(r)
+			}
+			if h.Supplier != nil {
+				h.Supplier.Register(r)
 			}
 			if h.Position != nil {
 				h.Position.Register(r)

@@ -28,29 +28,33 @@ func NewService(contracts domain.Repository, positions position.Repository, rele
 type LineInput struct {
 	ID              string // optional; preserved across updates
 	PositionID      string
+	ContractName    string // product name as written in this contract; optional
+	NTIN            string // national product code; optional
 	PlannedQuantity int
 	PlannedPrice    *int64
 }
 
 // CreateInput is the payload for creating a contract.
 type CreateInput struct {
-	Name            string
-	CustomerAddress string
-	ContractNumber  string
-	ContractDate    time.Time
-	BIN             string
-	Lines           []LineInput
-	CreatedBy       string
+	Name                 string
+	CustomerOfficialName string
+	CustomerAddress      string
+	ContractNumber       string
+	ContractDate         time.Time
+	BIN                  string
+	Lines                []LineInput
+	CreatedBy            string
 }
 
 // UpdateInput carries the optionally-updated header and appendix lines.
 type UpdateInput struct {
-	Name            *string
-	CustomerAddress *string
-	ContractNumber  *string
-	ContractDate    *time.Time
-	BIN             *string
-	Lines           *[]LineInput
+	Name                 *string
+	CustomerOfficialName *string
+	CustomerAddress      *string
+	ContractNumber       *string
+	ContractDate         *time.Time
+	BIN                  *string
+	Lines                *[]LineInput
 }
 
 // LineProgress is the per-line plan/release progress returned with a contract.
@@ -66,6 +70,8 @@ func toDomainLines(in []LineInput) []domain.Line {
 		lines[i] = domain.Line{
 			ID:              l.ID,
 			PositionID:      l.PositionID,
+			ContractName:    l.ContractName,
+			NTIN:            l.NTIN,
 			PlannedQuantity: l.PlannedQuantity,
 			PlannedPrice:    l.PlannedPrice,
 		}
@@ -74,7 +80,7 @@ func toDomainLines(in []LineInput) []domain.Line {
 }
 
 func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Contract, error) {
-	c, err := domain.New(in.Name, in.CustomerAddress, in.ContractNumber, in.ContractDate, in.BIN,
+	c, err := domain.New(in.Name, in.CustomerOfficialName, in.CustomerAddress, in.ContractNumber, in.ContractDate, in.BIN,
 		in.CreatedBy, toDomainLines(in.Lines))
 	if err != nil {
 		return nil, web.BadRequest(err.Error())
@@ -110,10 +116,13 @@ func (s *Service) List(ctx context.Context, f domain.Filter) ([]domain.Contract,
 	return s.contracts.List(ctx, f)
 }
 
-// PositionRef is the label data of a referenced position.
+// PositionRef is the label data of a referenced position. ContractName is the
+// position-level «наименование по договору» kept as a fallback for contract
+// lines that predate line-level contract names.
 type PositionRef struct {
-	Name      string
-	LotNumber string
+	Name         string
+	LotNumber    string
+	ContractName string
 }
 
 // PositionRefs batch-loads the position labels referenced by the appendix
@@ -136,9 +145,48 @@ func (s *Service) PositionRefs(ctx context.Context, contracts []domain.Contract)
 	}
 	refs := make(map[string]PositionRef, len(positions))
 	for i := range positions {
-		refs[positions[i].ID] = PositionRef{Name: positions[i].Name, LotNumber: positions[i].LotNumber}
+		refs[positions[i].ID] = PositionRef{
+			Name:         positions[i].Name,
+			LotNumber:    positions[i].LotNumber,
+			ContractName: positions[i].ContractName,
+		}
 	}
 	return refs, nil
+}
+
+// Amounts is the monetary plan/fulfilment summary of a contract: Total is the
+// planned sum over all priced lines, Released is the sum already shipped
+// (released quantity × planned line price).
+type Amounts struct {
+	Total    int64
+	Released int64
+}
+
+// AmountsFor batch-computes the plan/fulfilment sums for the given contracts
+// with a single released-quantities aggregation.
+func (s *Service) AmountsFor(ctx context.Context, contracts []domain.Contract) (map[string]Amounts, error) {
+	ids := make([]string, len(contracts))
+	for i := range contracts {
+		ids[i] = contracts[i].ID
+	}
+	released, err := s.releases.ReleasedByContracts(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]Amounts, len(contracts))
+	for i := range contracts {
+		c := &contracts[i]
+		var a Amounts
+		for _, l := range c.Lines {
+			if l.PlannedPrice == nil {
+				continue
+			}
+			a.Total += int64(l.PlannedQuantity) * *l.PlannedPrice
+			a.Released += int64(released[c.ID][l.ID]) * *l.PlannedPrice
+		}
+		out[c.ID] = a
+	}
+	return out, nil
 }
 
 func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*domain.Contract, map[string]LineProgress, error) {
@@ -149,6 +197,9 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*domai
 
 	if in.Name != nil {
 		c.Name = *in.Name
+	}
+	if in.CustomerOfficialName != nil {
+		c.CustomerOfficialName = *in.CustomerOfficialName
 	}
 	if in.CustomerAddress != nil {
 		c.CustomerAddress = *in.CustomerAddress
@@ -211,7 +262,7 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*domai
 	}
 
 	// Re-validate the header as a whole (name/address/number/date/bin).
-	if _, err := domain.New(c.Name, c.CustomerAddress, c.ContractNumber, c.ContractDate, c.BIN, c.CreatedBy, c.Lines); err != nil {
+	if _, err := domain.New(c.Name, c.CustomerOfficialName, c.CustomerAddress, c.ContractNumber, c.ContractDate, c.BIN, c.CreatedBy, c.Lines); err != nil {
 		return nil, nil, web.BadRequest(err.Error())
 	}
 

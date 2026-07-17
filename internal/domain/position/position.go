@@ -16,6 +16,7 @@ type Position struct {
 	ID            string
 	Name          string
 	BrandID       string
+	SupplierID    string // optional; ties the batch to its supplier
 	ContractName  string
 	ExpiryDate    time.Time
 	LotNumber     string
@@ -28,7 +29,7 @@ type Position struct {
 
 // New constructs a validated position. initialQuantity may be 0; when > 0 the
 // service treats it as an opening receipt.
-func New(name, brandID, contractName, lotNumber string, expiryDate time.Time, purchasePrice int64, initialQuantity, massGrams int) (*Position, error) {
+func New(name, brandID, supplierID, contractName, lotNumber string, expiryDate time.Time, purchasePrice int64, initialQuantity, massGrams int) (*Position, error) {
 	name = strings.TrimSpace(name)
 	brandID = strings.TrimSpace(brandID)
 	lotNumber = strings.TrimSpace(lotNumber)
@@ -60,6 +61,7 @@ func New(name, brandID, contractName, lotNumber string, expiryDate time.Time, pu
 		ID:            uuid.NewString(),
 		Name:          name,
 		BrandID:       brandID,
+		SupplierID:    strings.TrimSpace(supplierID),
 		ContractName:  strings.TrimSpace(contractName),
 		ExpiryDate:    expiryDate.UTC(),
 		LotNumber:     lotNumber,

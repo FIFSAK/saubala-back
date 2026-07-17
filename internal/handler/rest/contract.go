@@ -30,11 +30,15 @@ func (h *ContractHandler) Register(r chi.Router) {
 }
 
 // contractLineResponse includes per-line plan progress (used for detail views).
+// ContractName falls back to the position-level «наименование по договору» for
+// lines that predate line-level contract names.
 type contractLineResponse struct {
 	ID               string `json:"id"`
 	PositionID       string `json:"position_id"`
 	PositionName     string `json:"position_name"`
 	LotNumber        string `json:"lot_number"`
+	ContractName     string `json:"contract_name"`
+	NTIN             string `json:"ntin"`
 	PlannedQuantity  int    `json:"planned_quantity"`
 	PlannedPrice     *int64 `json:"planned_price"`
 	ReleasedQuantity int    `json:"released_quantity"`
@@ -47,37 +51,54 @@ type contractLinePlan struct {
 	PositionID      string `json:"position_id"`
 	PositionName    string `json:"position_name"`
 	LotNumber       string `json:"lot_number"`
+	ContractName    string `json:"contract_name"`
+	NTIN            string `json:"ntin"`
 	PlannedQuantity int    `json:"planned_quantity"`
 	PlannedPrice    *int64 `json:"planned_price"`
 }
 
 type contractResponse struct {
-	ID              string                 `json:"id"`
-	Name            string                 `json:"name"`
-	CustomerAddress string                 `json:"customer_address"`
-	ContractNumber  string                 `json:"contract_number"`
-	ContractDate    time.Time              `json:"contract_date"`
-	BIN             string                 `json:"bin"`
-	Lines           []contractLineResponse `json:"lines"`
-	CreatedBy       string                 `json:"created_by"`
-	CreatedAt       time.Time              `json:"created_at"`
-	UpdatedAt       time.Time              `json:"updated_at"`
+	ID                   string                 `json:"id"`
+	Name                 string                 `json:"name"`
+	CustomerOfficialName string                 `json:"customer_official_name"`
+	CustomerAddress      string                 `json:"customer_address"`
+	ContractNumber       string                 `json:"contract_number"`
+	ContractDate         time.Time              `json:"contract_date"`
+	BIN                  string                 `json:"bin"`
+	Lines                []contractLineResponse `json:"lines"`
+	TotalAmount          int64                  `json:"total_amount"`
+	ReleasedAmount       int64                  `json:"released_amount"`
+	CreatedBy            string                 `json:"created_by"`
+	CreatedAt            time.Time              `json:"created_at"`
+	UpdatedAt            time.Time              `json:"updated_at"`
 }
 
 type contractListItem struct {
-	ID              string             `json:"id"`
-	Name            string             `json:"name"`
-	CustomerAddress string             `json:"customer_address"`
-	ContractNumber  string             `json:"contract_number"`
-	ContractDate    time.Time          `json:"contract_date"`
-	BIN             string             `json:"bin"`
-	Lines           []contractLinePlan `json:"lines"`
-	CreatedBy       string             `json:"created_by"`
-	CreatedAt       time.Time          `json:"created_at"`
-	UpdatedAt       time.Time          `json:"updated_at"`
+	ID                   string             `json:"id"`
+	Name                 string             `json:"name"`
+	CustomerOfficialName string             `json:"customer_official_name"`
+	CustomerAddress      string             `json:"customer_address"`
+	ContractNumber       string             `json:"contract_number"`
+	ContractDate         time.Time          `json:"contract_date"`
+	BIN                  string             `json:"bin"`
+	Lines                []contractLinePlan `json:"lines"`
+	TotalAmount          int64              `json:"total_amount"`
+	ReleasedAmount       int64              `json:"released_amount"`
+	CreatedBy            string             `json:"created_by"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
 }
 
-func toContractResponse(c *domain.Contract, progress map[string]contractsvc.LineProgress, prefs map[string]contractsvc.PositionRef) contractResponse {
+// lineContractName resolves the per-contract product name of a line, falling
+// back to the position-level value for contracts saved before the move.
+func lineContractName(l domain.Line, pref contractsvc.PositionRef) string {
+	if l.ContractName != "" {
+		return l.ContractName
+	}
+	return pref.ContractName
+}
+
+func toContractResponse(c *domain.Contract, progress map[string]contractsvc.LineProgress, prefs map[string]contractsvc.PositionRef, amounts contractsvc.Amounts) contractResponse {
 	lines := make([]contractLineResponse, len(c.Lines))
 	for i, l := range c.Lines {
 		released, remaining := 0, l.PlannedQuantity
@@ -90,6 +111,8 @@ func toContractResponse(c *domain.Contract, progress map[string]contractsvc.Line
 			PositionID:       l.PositionID,
 			PositionName:     pref.Name,
 			LotNumber:        pref.LotNumber,
+			ContractName:     lineContractName(l, pref),
+			NTIN:             l.NTIN,
 			PlannedQuantity:  l.PlannedQuantity,
 			PlannedPrice:     l.PlannedPrice,
 			ReleasedQuantity: released,
@@ -97,20 +120,23 @@ func toContractResponse(c *domain.Contract, progress map[string]contractsvc.Line
 		}
 	}
 	return contractResponse{
-		ID:              c.ID,
-		Name:            c.Name,
-		CustomerAddress: c.CustomerAddress,
-		ContractNumber:  c.ContractNumber,
-		ContractDate:    c.ContractDate,
-		BIN:             c.BIN,
-		Lines:           lines,
-		CreatedBy:       c.CreatedBy,
-		CreatedAt:       c.CreatedAt,
-		UpdatedAt:       c.UpdatedAt,
+		ID:                   c.ID,
+		Name:                 c.Name,
+		CustomerOfficialName: c.CustomerOfficialName,
+		CustomerAddress:      c.CustomerAddress,
+		ContractNumber:       c.ContractNumber,
+		ContractDate:         c.ContractDate,
+		BIN:                  c.BIN,
+		Lines:                lines,
+		TotalAmount:          amounts.Total,
+		ReleasedAmount:       amounts.Released,
+		CreatedBy:            c.CreatedBy,
+		CreatedAt:            c.CreatedAt,
+		UpdatedAt:            c.UpdatedAt,
 	}
 }
 
-func toContractListItem(c *domain.Contract, prefs map[string]contractsvc.PositionRef) contractListItem {
+func toContractListItem(c *domain.Contract, prefs map[string]contractsvc.PositionRef, amounts contractsvc.Amounts) contractListItem {
 	lines := make([]contractLinePlan, len(c.Lines))
 	for i, l := range c.Lines {
 		pref := prefs[l.PositionID]
@@ -119,27 +145,34 @@ func toContractListItem(c *domain.Contract, prefs map[string]contractsvc.Positio
 			PositionID:      l.PositionID,
 			PositionName:    pref.Name,
 			LotNumber:       pref.LotNumber,
+			ContractName:    lineContractName(l, pref),
+			NTIN:            l.NTIN,
 			PlannedQuantity: l.PlannedQuantity,
 			PlannedPrice:    l.PlannedPrice,
 		}
 	}
 	return contractListItem{
-		ID:              c.ID,
-		Name:            c.Name,
-		CustomerAddress: c.CustomerAddress,
-		ContractNumber:  c.ContractNumber,
-		ContractDate:    c.ContractDate,
-		BIN:             c.BIN,
-		Lines:           lines,
-		CreatedBy:       c.CreatedBy,
-		CreatedAt:       c.CreatedAt,
-		UpdatedAt:       c.UpdatedAt,
+		ID:                   c.ID,
+		Name:                 c.Name,
+		CustomerOfficialName: c.CustomerOfficialName,
+		CustomerAddress:      c.CustomerAddress,
+		ContractNumber:       c.ContractNumber,
+		ContractDate:         c.ContractDate,
+		BIN:                  c.BIN,
+		Lines:                lines,
+		TotalAmount:          amounts.Total,
+		ReleasedAmount:       amounts.Released,
+		CreatedBy:            c.CreatedBy,
+		CreatedAt:            c.CreatedAt,
+		UpdatedAt:            c.UpdatedAt,
 	}
 }
 
 type contractLineRequest struct {
 	ID              string `json:"id"`
 	PositionID      string `json:"position_id"`
+	ContractName    string `json:"contract_name"`
+	NTIN            string `json:"ntin"`
 	PlannedQuantity int    `json:"planned_quantity"`
 	PlannedPrice    *int64 `json:"planned_price"`
 }
@@ -150,6 +183,8 @@ func toServiceLines(in []contractLineRequest) []contractsvc.LineInput {
 		lines[i] = contractsvc.LineInput{
 			ID:              l.ID,
 			PositionID:      l.PositionID,
+			ContractName:    l.ContractName,
+			NTIN:            l.NTIN,
 			PlannedQuantity: l.PlannedQuantity,
 			PlannedPrice:    l.PlannedPrice,
 		}
@@ -158,21 +193,23 @@ func toServiceLines(in []contractLineRequest) []contractsvc.LineInput {
 }
 
 type createContractRequest struct {
-	Name            string                `json:"name"`
-	CustomerAddress string                `json:"customer_address"`
-	ContractNumber  string                `json:"contract_number"`
-	ContractDate    time.Time             `json:"contract_date"`
-	BIN             string                `json:"bin"`
-	Lines           []contractLineRequest `json:"lines"`
+	Name                 string                `json:"name"`
+	CustomerOfficialName string                `json:"customer_official_name"`
+	CustomerAddress      string                `json:"customer_address"`
+	ContractNumber       string                `json:"contract_number"`
+	ContractDate         time.Time             `json:"contract_date"`
+	BIN                  string                `json:"bin"`
+	Lines                []contractLineRequest `json:"lines"`
 }
 
 type updateContractRequest struct {
-	Name            *string                `json:"name"`
-	CustomerAddress *string                `json:"customer_address"`
-	ContractNumber  *string                `json:"contract_number"`
-	ContractDate    *time.Time             `json:"contract_date"`
-	BIN             *string                `json:"bin"`
-	Lines           *[]contractLineRequest `json:"lines"`
+	Name                 *string                `json:"name"`
+	CustomerOfficialName *string                `json:"customer_official_name"`
+	CustomerAddress      *string                `json:"customer_address"`
+	ContractNumber       *string                `json:"contract_number"`
+	ContractDate         *time.Time             `json:"contract_date"`
+	BIN                  *string                `json:"bin"`
+	Lines                *[]contractLineRequest `json:"lines"`
 }
 
 func (h *ContractHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -207,9 +244,14 @@ func (h *ContractHandler) List(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
+	amounts, err := h.contracts.AmountsFor(r.Context(), contracts)
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
 	items := make([]contractListItem, len(contracts))
 	for i := range contracts {
-		items[i] = toContractListItem(&contracts[i], prefs)
+		items[i] = toContractListItem(&contracts[i], prefs, amounts[contracts[i].ID])
 	}
 	web.List(w, items, total, p)
 }
@@ -223,13 +265,14 @@ func (h *ContractHandler) Create(w http.ResponseWriter, r *http.Request) {
 	actor, _ := middleware.CurrentUser(r.Context())
 
 	c, err := h.contracts.Create(r.Context(), contractsvc.CreateInput{
-		Name:            req.Name,
-		CustomerAddress: req.CustomerAddress,
-		ContractNumber:  req.ContractNumber,
-		ContractDate:    req.ContractDate,
-		BIN:             req.BIN,
-		Lines:           toServiceLines(req.Lines),
-		CreatedBy:       actorID(actor),
+		Name:                 req.Name,
+		CustomerOfficialName: req.CustomerOfficialName,
+		CustomerAddress:      req.CustomerAddress,
+		ContractNumber:       req.ContractNumber,
+		ContractDate:         req.ContractDate,
+		BIN:                  req.BIN,
+		Lines:                toServiceLines(req.Lines),
+		CreatedBy:            actorID(actor),
 	})
 	if err != nil {
 		web.WriteError(w, err)
@@ -240,8 +283,13 @@ func (h *ContractHandler) Create(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
+	amounts, err := h.contracts.AmountsFor(r.Context(), []domain.Contract{*c})
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
 	// A brand-new contract has no releases yet, so progress is all-zero.
-	web.JSON(w, http.StatusCreated, toContractResponse(c, nil, prefs))
+	web.JSON(w, http.StatusCreated, toContractResponse(c, nil, prefs, amounts[c.ID]))
 }
 
 func (h *ContractHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -255,7 +303,12 @@ func (h *ContractHandler) Get(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
-	web.JSON(w, http.StatusOK, toContractResponse(c, progress, prefs))
+	amounts, err := h.contracts.AmountsFor(r.Context(), []domain.Contract{*c})
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
+	web.JSON(w, http.StatusOK, toContractResponse(c, progress, prefs, amounts[c.ID]))
 }
 
 func (h *ContractHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -266,11 +319,12 @@ func (h *ContractHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	in := contractsvc.UpdateInput{
-		Name:            req.Name,
-		CustomerAddress: req.CustomerAddress,
-		ContractNumber:  req.ContractNumber,
-		ContractDate:    req.ContractDate,
-		BIN:             req.BIN,
+		Name:                 req.Name,
+		CustomerOfficialName: req.CustomerOfficialName,
+		CustomerAddress:      req.CustomerAddress,
+		ContractNumber:       req.ContractNumber,
+		ContractDate:         req.ContractDate,
+		BIN:                  req.BIN,
 	}
 	if req.Lines != nil {
 		lines := toServiceLines(*req.Lines)
@@ -287,7 +341,12 @@ func (h *ContractHandler) Update(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
-	web.JSON(w, http.StatusOK, toContractResponse(c, progress, prefs))
+	amounts, err := h.contracts.AmountsFor(r.Context(), []domain.Contract{*c})
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
+	web.JSON(w, http.StatusOK, toContractResponse(c, progress, prefs, amounts[c.ID]))
 }
 
 func (h *ContractHandler) Delete(w http.ResponseWriter, r *http.Request) {

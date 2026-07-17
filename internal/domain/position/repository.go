@@ -9,6 +9,7 @@ import (
 type Filter struct {
 	Q            string // matched against name / contract_name / lot_number
 	BrandID      string
+	SupplierID   string
 	ExpiryBefore *time.Time
 	ExpiryAfter  *time.Time
 	InStock      bool // when true, only positions with quantity > 0
@@ -33,6 +34,9 @@ type Repository interface {
 	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, f Filter) ([]Position, int64, error)
 	CountByBrand(ctx context.Context, brandID string) (int64, error)
+	// CountBySupplier reports how many positions reference the given supplier
+	// (used to block supplier deletion).
+	CountBySupplier(ctx context.Context, supplierID string) (int64, error)
 
 	// IncrementQuantity atomically adds delta (may be negative for compensation)
 	// to a position's stock.

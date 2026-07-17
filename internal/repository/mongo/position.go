@@ -17,6 +17,7 @@ type positionDoc struct {
 	ID            string    `bson:"_id"`
 	Name          string    `bson:"name"`
 	BrandID       string    `bson:"brand_id"`
+	SupplierID    string    `bson:"supplier_id,omitempty"`
 	ContractName  string    `bson:"contract_name"`
 	ExpiryDate    time.Time `bson:"expiry_date"`
 	LotNumber     string    `bson:"lot_number"`
@@ -32,6 +33,7 @@ func toPositionDoc(p *position.Position) positionDoc {
 		ID:            p.ID,
 		Name:          p.Name,
 		BrandID:       p.BrandID,
+		SupplierID:    p.SupplierID,
 		ContractName:  p.ContractName,
 		ExpiryDate:    p.ExpiryDate,
 		LotNumber:     p.LotNumber,
@@ -48,6 +50,7 @@ func (d positionDoc) toDomain() *position.Position {
 		ID:            d.ID,
 		Name:          d.Name,
 		BrandID:       d.BrandID,
+		SupplierID:    d.SupplierID,
 		ContractName:  d.ContractName,
 		ExpiryDate:    d.ExpiryDate,
 		LotNumber:     d.LotNumber,
@@ -120,6 +123,7 @@ func (r *PositionRepository) Update(ctx context.Context, p *position.Position) e
 	res, err := r.coll.UpdateByID(ctx, p.ID, bson.M{"$set": bson.M{
 		"name":           p.Name,
 		"brand_id":       p.BrandID,
+		"supplier_id":    p.SupplierID,
 		"contract_name":  p.ContractName,
 		"expiry_date":    p.ExpiryDate,
 		"lot_number":     p.LotNumber,
@@ -159,6 +163,9 @@ func (r *PositionRepository) List(ctx context.Context, f position.Filter) ([]pos
 	}
 	if f.BrandID != "" {
 		filter["brand_id"] = f.BrandID
+	}
+	if f.SupplierID != "" {
+		filter["supplier_id"] = f.SupplierID
 	}
 	if f.InStock {
 		filter["quantity"] = bson.M{"$gt": 0}
@@ -204,6 +211,10 @@ func (r *PositionRepository) List(ctx context.Context, f position.Filter) ([]pos
 
 func (r *PositionRepository) CountByBrand(ctx context.Context, brandID string) (int64, error) {
 	return r.coll.CountDocuments(ctx, bson.M{"brand_id": brandID})
+}
+
+func (r *PositionRepository) CountBySupplier(ctx context.Context, supplierID string) (int64, error) {
+	return r.coll.CountDocuments(ctx, bson.M{"supplier_id": supplierID})
 }
 
 func (r *PositionRepository) IncrementQuantity(ctx context.Context, id string, delta int) error {

@@ -8,8 +8,10 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/FIFSAK/saubala-back/internal/domain/brand"
 	"github.com/FIFSAK/saubala-back/internal/domain/position"
 	domain "github.com/FIFSAK/saubala-back/internal/domain/receipt"
+	"github.com/FIFSAK/saubala-back/internal/domain/supplier"
 	"github.com/FIFSAK/saubala-back/pkg/log"
 	"github.com/FIFSAK/saubala-back/pkg/store"
 	"github.com/FIFSAK/saubala-back/pkg/web"
@@ -19,10 +21,12 @@ import (
 type Service struct {
 	receipts  domain.Repository
 	positions position.Repository
+	brands    brand.Repository
+	suppliers supplier.Repository
 }
 
-func NewService(receipts domain.Repository, positions position.Repository) *Service {
-	return &Service{receipts: receipts, positions: positions}
+func NewService(receipts domain.Repository, positions position.Repository, brands brand.Repository, suppliers supplier.Repository) *Service {
+	return &Service{receipts: receipts, positions: positions, brands: brands, suppliers: suppliers}
 }
 
 // LineInput is one stock-in row.
@@ -33,10 +37,12 @@ type LineInput struct {
 
 // CreateInput is the payload for creating a receipt.
 type CreateInput struct {
-	Date      time.Time
-	Note      string
-	Lines     []LineInput
-	CreatedBy string
+	Date          time.Time
+	Note          string
+	SupplierID    string // optional
+	InvoiceAmount int64
+	Lines         []LineInput
+	CreatedBy     string
 }
 
 func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Receipt, error) {
@@ -45,9 +51,18 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Receipt, 
 		lines[i] = domain.Line{PositionID: l.PositionID, Quantity: l.Quantity}
 	}
 
-	rec, err := domain.New(in.Date, in.Note, in.CreatedBy, lines)
+	rec, err := domain.New(in.Date, in.Note, in.SupplierID, in.InvoiceAmount, in.CreatedBy, lines)
 	if err != nil {
 		return nil, web.BadRequest(err.Error())
+	}
+
+	if rec.SupplierID != "" {
+		if _, err := s.suppliers.GetByID(ctx, rec.SupplierID); err != nil {
+			if errors.Is(err, store.ErrorNotFound) {
+				return nil, web.BadRequest("поставщик не существует")
+			}
+			return nil, err
+		}
 	}
 
 	// All referenced positions must exist before any stock is touched.
@@ -96,10 +111,12 @@ func (s *Service) List(ctx context.Context, f domain.Filter) ([]domain.Receipt, 
 type PositionRef struct {
 	Name      string
 	LotNumber string
+	BrandName string
 }
 
-// PositionRefs batch-loads the position labels referenced by the given
-// receipts, so responses carry human-readable names instead of bare IDs.
+// PositionRefs batch-loads the position labels (and their brand names)
+// referenced by the given receipts, so responses carry human-readable names
+// instead of bare IDs.
 func (s *Service) PositionRefs(ctx context.Context, recs []domain.Receipt) (map[string]PositionRef, error) {
 	ids := make(map[string]struct{})
 	for i := range recs {
@@ -115,11 +132,58 @@ func (s *Service) PositionRefs(ctx context.Context, recs []domain.Receipt) (map[
 	if err != nil {
 		return nil, err
 	}
+
+	brandIDs := make(map[string]struct{}, len(positions))
+	for i := range positions {
+		if positions[i].BrandID != "" {
+			brandIDs[positions[i].BrandID] = struct{}{}
+		}
+	}
+	brandList := make([]string, 0, len(brandIDs))
+	for id := range brandIDs {
+		brandList = append(brandList, id)
+	}
+	brands, err := s.brands.GetByIDs(ctx, brandList)
+	if err != nil {
+		return nil, err
+	}
+	brandName := make(map[string]string, len(brands))
+	for i := range brands {
+		brandName[brands[i].ID] = brands[i].Name
+	}
+
 	refs := make(map[string]PositionRef, len(positions))
 	for i := range positions {
-		refs[positions[i].ID] = PositionRef{Name: positions[i].Name, LotNumber: positions[i].LotNumber}
+		refs[positions[i].ID] = PositionRef{
+			Name:      positions[i].Name,
+			LotNumber: positions[i].LotNumber,
+			BrandName: brandName[positions[i].BrandID],
+		}
 	}
 	return refs, nil
+}
+
+// SupplierNames batch-loads supplier names for the given receipts.
+func (s *Service) SupplierNames(ctx context.Context, recs []domain.Receipt) (map[string]string, error) {
+	ids := make(map[string]struct{}, len(recs))
+	for i := range recs {
+		if recs[i].SupplierID != "" {
+			ids[recs[i].SupplierID] = struct{}{}
+		}
+	}
+	list := make([]string, 0, len(ids))
+	for id := range ids {
+		list = append(list, id)
+	}
+	suppliers, err := s.suppliers.GetByIDs(ctx, list)
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[string]string, len(suppliers))
+	for i := range suppliers {
+		names[suppliers[i].ID] = suppliers[i].Name
+	}
+	return names, nil
 }
 
 // compensate reverses previously-applied stock increments. It runs on a detached

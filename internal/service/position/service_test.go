@@ -12,6 +12,7 @@ import (
 	domain "github.com/FIFSAK/saubala-back/internal/domain/position"
 	"github.com/FIFSAK/saubala-back/internal/domain/receipt"
 	"github.com/FIFSAK/saubala-back/internal/domain/release"
+	"github.com/FIFSAK/saubala-back/internal/domain/supplier"
 	"github.com/FIFSAK/saubala-back/pkg/store"
 	"github.com/FIFSAK/saubala-back/pkg/web"
 )
@@ -71,7 +72,8 @@ func (f *fakePositions) Delete(context.Context, string) error { return nil }
 func (f *fakePositions) List(context.Context, domain.Filter) ([]domain.Position, int64, error) {
 	return nil, 0, nil
 }
-func (f *fakePositions) CountByBrand(context.Context, string) (int64, error) { return 0, nil }
+func (f *fakePositions) CountByBrand(context.Context, string) (int64, error)    { return 0, nil }
+func (f *fakePositions) CountBySupplier(context.Context, string) (int64, error) { return 0, nil }
 
 type fakeAdjustments struct {
 	items      []adjustment.Adjustment
@@ -105,6 +107,10 @@ func (f *fakeReceipts) GetByID(context.Context, string) (*receipt.Receipt, error
 func (f *fakeReceipts) List(context.Context, receipt.Filter) ([]receipt.Receipt, int64, error) {
 	return nil, 0, nil
 }
+func (f *fakeReceipts) CountBySupplier(context.Context, string) (int64, error) { return 0, nil }
+func (f *fakeReceipts) InvoiceTotalBySupplier(context.Context, []string) (map[string]int64, error) {
+	return nil, nil
+}
 func (f *fakeReceipts) ListByPosition(context.Context, string) ([]receipt.Receipt, error) {
 	return f.items, nil
 }
@@ -121,10 +127,17 @@ func (f *fakeReleases) List(context.Context, release.Filter) ([]release.Release,
 func (f *fakeReleases) ListByPosition(context.Context, string) ([]release.Release, error) {
 	return f.items, nil
 }
+func (f *fakeReleases) UpdateWaybill(context.Context, string, release.WaybillUpdate) error {
+	return nil
+}
 func (f *fakeReleases) CountByContract(context.Context, string) (int64, error) { return 0, nil }
 func (f *fakeReleases) ReleasedByContract(context.Context, string) (map[string]int, error) {
 	return nil, nil
 }
+func (f *fakeReleases) ReleasedByContracts(context.Context, []string) (map[string]map[string]int, error) {
+	return nil, nil
+}
+func (f *fakeReleases) CountByOrganization(context.Context, string) (int64, error) { return 0, nil }
 
 type fakeBrands struct{}
 
@@ -139,6 +152,21 @@ func (fakeBrands) GetByName(context.Context, string) (*brand.Brand, error) {
 func (fakeBrands) Update(context.Context, *brand.Brand) error { return nil }
 func (fakeBrands) SoftDelete(context.Context, string) error   { return nil }
 func (fakeBrands) List(context.Context, brand.Filter) ([]brand.Brand, int64, error) {
+	return nil, 0, nil
+}
+
+type fakeSuppliers struct{}
+
+func (fakeSuppliers) Create(context.Context, *supplier.Supplier) error { return nil }
+func (fakeSuppliers) GetByID(context.Context, string) (*supplier.Supplier, error) {
+	return &supplier.Supplier{}, nil
+}
+func (fakeSuppliers) GetByIDs(context.Context, []string) ([]supplier.Supplier, error) {
+	return nil, nil
+}
+func (fakeSuppliers) Update(context.Context, *supplier.Supplier) error { return nil }
+func (fakeSuppliers) Delete(context.Context, string) error             { return nil }
+func (fakeSuppliers) List(context.Context, supplier.Filter) ([]supplier.Supplier, int64, error) {
 	return nil, 0, nil
 }
 
@@ -178,7 +206,7 @@ func newHarness(startQty int) *harness {
 	adj := &fakeAdjustments{}
 	rec := &fakeReceipts{}
 	rel := &fakeReleases{}
-	svc := NewService(pos, fakeBrands{}, rec, rel, fakeContracts{}, adj)
+	svc := NewService(pos, fakeBrands{}, fakeSuppliers{}, rec, rel, fakeContracts{}, adj)
 	return &harness{svc: svc, adj: adj, pos: pos, rec: rec, id: id}
 }
 

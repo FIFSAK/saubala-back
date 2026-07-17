@@ -35,6 +35,8 @@ type positionResponse struct {
 	Name          string    `json:"name"`
 	BrandID       string    `json:"brand_id"`
 	BrandName     string    `json:"brand_name"`
+	SupplierID    string    `json:"supplier_id"`
+	SupplierName  string    `json:"supplier_name"`
 	ContractName  string    `json:"contract_name"`
 	ExpiryDate    time.Time `json:"expiry_date"`
 	LotNumber     string    `json:"lot_number"`
@@ -45,12 +47,14 @@ type positionResponse struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
-func toPositionResponse(p *domain.Position, brandNames map[string]string) positionResponse {
+func toPositionResponse(p *domain.Position, brandNames, supplierNames map[string]string) positionResponse {
 	return positionResponse{
 		ID:            p.ID,
 		Name:          p.Name,
 		BrandID:       p.BrandID,
 		BrandName:     brandNames[p.BrandID],
+		SupplierID:    p.SupplierID,
+		SupplierName:  supplierNames[p.SupplierID],
 		ContractName:  p.ContractName,
 		ExpiryDate:    p.ExpiryDate,
 		LotNumber:     p.LotNumber,
@@ -69,12 +73,18 @@ func (h *PositionHandler) respondPosition(w http.ResponseWriter, r *http.Request
 		web.WriteError(w, err)
 		return
 	}
-	web.JSON(w, status, toPositionResponse(p, names))
+	supplierNames, err := h.positions.SupplierNames(r.Context(), []domain.Position{*p})
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
+	web.JSON(w, status, toPositionResponse(p, names, supplierNames))
 }
 
 type createPositionRequest struct {
 	Name          string    `json:"name"`
 	BrandID       string    `json:"brand_id"`
+	SupplierID    string    `json:"supplier_id"`
 	ContractName  string    `json:"contract_name"`
 	ExpiryDate    time.Time `json:"expiry_date"`
 	LotNumber     string    `json:"lot_number"`
@@ -86,6 +96,7 @@ type createPositionRequest struct {
 type updatePositionRequest struct {
 	Name          *string    `json:"name"`
 	BrandID       *string    `json:"brand_id"`
+	SupplierID    *string    `json:"supplier_id"`
 	ContractName  *string    `json:"contract_name"`
 	ExpiryDate    *time.Time `json:"expiry_date"`
 	LotNumber     *string    `json:"lot_number"`
@@ -112,6 +123,7 @@ func (h *PositionHandler) List(w http.ResponseWriter, r *http.Request) {
 	filter := domain.Filter{
 		Q:            p.Q,
 		BrandID:      r.URL.Query().Get("brand_id"),
+		SupplierID:   r.URL.Query().Get("supplier_id"),
 		ExpiryBefore: before,
 		ExpiryAfter:  after,
 		InStock:      inStock != nil && *inStock,
@@ -131,9 +143,14 @@ func (h *PositionHandler) List(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
+	supplierNames, err := h.positions.SupplierNames(r.Context(), positions)
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
 	items := make([]positionResponse, len(positions))
 	for i := range positions {
-		items[i] = toPositionResponse(&positions[i], brandNames)
+		items[i] = toPositionResponse(&positions[i], brandNames, supplierNames)
 	}
 	web.List(w, items, total, p)
 }
@@ -149,6 +166,7 @@ func (h *PositionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	p, err := h.positions.Create(r.Context(), positionsvc.CreateInput{
 		Name:          req.Name,
 		BrandID:       req.BrandID,
+		SupplierID:    req.SupplierID,
 		ContractName:  req.ContractName,
 		ExpiryDate:    req.ExpiryDate,
 		LotNumber:     req.LotNumber,
@@ -183,6 +201,7 @@ func (h *PositionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	p, err := h.positions.Update(r.Context(), chi.URLParam(r, "id"), positionsvc.UpdateInput{
 		Name:          req.Name,
 		BrandID:       req.BrandID,
+		SupplierID:    req.SupplierID,
 		ContractName:  req.ContractName,
 		ExpiryDate:    req.ExpiryDate,
 		LotNumber:     req.LotNumber,

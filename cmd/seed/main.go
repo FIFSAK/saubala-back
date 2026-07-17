@@ -20,12 +20,14 @@ import (
 
 	"github.com/FIFSAK/saubala-back/internal/config"
 	branddom "github.com/FIFSAK/saubala-back/internal/domain/brand"
+	supplierdom "github.com/FIFSAK/saubala-back/internal/domain/supplier"
 	"github.com/FIFSAK/saubala-back/internal/repository"
 	"github.com/FIFSAK/saubala-back/internal/service"
 	contractsvc "github.com/FIFSAK/saubala-back/internal/service/contract"
 	positionsvc "github.com/FIFSAK/saubala-back/internal/service/position"
 	receiptsvc "github.com/FIFSAK/saubala-back/internal/service/receipt"
 	releasesvc "github.com/FIFSAK/saubala-back/internal/service/release"
+	suppliersvc "github.com/FIFSAK/saubala-back/internal/service/supplier"
 	usersvc "github.com/FIFSAK/saubala-back/internal/service/user"
 	"github.com/FIFSAK/saubala-back/pkg/auth"
 	"github.com/FIFSAK/saubala-back/pkg/store"
@@ -92,7 +94,7 @@ func run(reset bool, password string) error {
 	defer m.Close(ctx)
 
 	if reset {
-		for _, name := range []string{"users", "brands", "positions", "receipts", "contracts", "releases"} {
+		for _, name := range []string{"users", "brands", "positions", "receipts", "contracts", "releases", "adjustments", "suppliers"} {
 			if err := m.DB.Collection(name).Drop(ctx); err != nil {
 				log.Printf("drop %s: %v", name, err)
 			}
@@ -114,6 +116,7 @@ func run(reset bool, password string) error {
 		service.WithReceiptService(),
 		service.WithContractService(),
 		service.WithReleaseService(),
+		service.WithSupplierService(),
 	)
 	if err != nil {
 		return fmt.Errorf("services: %w", err)
@@ -158,16 +161,37 @@ func run(reset bool, password string) error {
 	bHumana := s.brand("Humana")
 	log.Println("► бренды созданы")
 
+	// --- suppliers ---
+	supKZ := ""
+	if sup, err := svc.Supplier.Create(ctx, suppliersvc.Input{
+		Name: "ТОО «МедИмпорт КЗ»", Type: supplierdom.TypeKZ, BIN: "140540019034",
+		Phone: "+7 727 300 00 00", Email: "sales@medimport.kz",
+	}); err != nil {
+		log.Printf("  ! поставщик ТОО «МедИмпорт КЗ»: %v", err)
+	} else {
+		supKZ = sup.ID
+	}
+	supForeign := ""
+	if sup, err := svc.Supplier.Create(ctx, suppliersvc.Input{
+		Name: "Danone Trading B.V.", Type: supplierdom.TypeForeign, Country: "Нидерланды",
+		Email: "export@danone.com",
+	}); err != nil {
+		log.Printf("  ! поставщик Danone Trading B.V.: %v", err)
+	} else {
+		supForeign = sup.ID
+	}
+	log.Println("► поставщики созданы")
+
 	// --- positions (with opening stock) ---
 	pos := map[string]string{}
 	pos["neocate"] = s.position(positionsvc.CreateInput{
-		Name: "Neocate LCP, банка 400 г", BrandID: bNutricia,
+		Name: "Neocate LCP, банка 400 г", BrandID: bNutricia, SupplierID: supForeign,
 		ContractName: "Смесь аминокислотная Neocate LCP",
 		ExpiryDate:   now.AddDate(1, 0, 0), LotNumber: "NEO-2026-014",
 		PurchasePrice: tg(18500), Quantity: 120, MassGrams: 400,
 	})
 	pos["pepti"] = s.position(positionsvc.CreateInput{
-		Name: "Nutrilon Пепти Гастро, 450 г", BrandID: bNutricia,
+		Name: "Nutrilon Пепти Гастро, 450 г", BrandID: bNutricia, SupplierID: supForeign,
 		ContractName: "Смесь Nutrilon Пепти Гастро",
 		ExpiryDate:   now.AddDate(0, 8, 0), LotNumber: "NTR-PG-0451",
 		PurchasePrice: tg(9800), Quantity: 80, MassGrams: 450,
@@ -179,7 +203,7 @@ func run(reset bool, password string) error {
 		PurchasePrice: tg(21000), Quantity: 60, MassGrams: 400,
 	})
 	pos["pediasure"] = s.position(positionsvc.CreateInput{
-		Name: "PediaSure со вкусом ванили, 400 г", BrandID: bAbbott,
+		Name: "PediaSure со вкусом ванили, 400 г", BrandID: bAbbott, SupplierID: supKZ,
 		ContractName: "Питание энтеральное PediaSure",
 		ExpiryDate:   now.AddDate(0, 5, 0), LotNumber: "PS-VAN-400",
 		PurchasePrice: tg(6500), Quantity: 200, MassGrams: 400,
@@ -209,6 +233,8 @@ func run(reset bool, password string) error {
 		if _, err := svc.Receipt.Create(ctx, receiptsvc.CreateInput{
 			Date: now.AddDate(0, 0, -5),
 			Note: "Плановая поставка", CreatedBy: admin.ID,
+			SupplierID:    supKZ,
+			InvoiceAmount: tg(1042000),
 			Lines: []receiptsvc.LineInput{
 				{PositionID: pos["pediasure"], Quantity: 100},
 				{PositionID: pos["pepti"], Quantity: 40},
@@ -222,26 +248,28 @@ func run(reset bool, password string) error {
 
 	// --- contracts ---
 	c1, err := svc.Contract.Create(ctx, contractsvc.CreateInput{
-		Name:            "Государственный закуп специализированного питания на 2026 год",
-		CustomerAddress: "г. Астана, ул. Бейбітшілік, 11, ГКП «Центр социальной помощи»",
-		ContractNumber:  "ГЗ-2026-014", ContractDate: now.AddDate(0, -1, 0), BIN: "123456789012",
+		Name:                 "Государственный закуп специализированного питания на 2026 год",
+		CustomerOfficialName: "ГКП на ПХВ «Центр социальной помощи» акимата г. Астаны",
+		CustomerAddress:      "г. Астана, ул. Бейбітшілік, 11, ГКП «Центр социальной помощи»",
+		ContractNumber:       "ГЗ-2026-014", ContractDate: now.AddDate(0, -1, 0), BIN: "123456789012",
 		CreatedBy: admin.ID,
 		Lines: []contractsvc.LineInput{
-			{PositionID: pos["neocate"], PlannedQuantity: 50, PlannedPrice: priceP(19500)},
-			{PositionID: pos["pediasure"], PlannedQuantity: 120, PlannedPrice: priceP(7000)},
+			{PositionID: pos["neocate"], ContractName: "Смесь аминокислотная Neocate LCP", NTIN: "870640900001256422", PlannedQuantity: 50, PlannedPrice: priceP(19500)},
+			{PositionID: pos["pediasure"], ContractName: "Питание энтеральное PediaSure", NTIN: "870640900001256439", PlannedQuantity: 120, PlannedPrice: priceP(7000)},
 		},
 	})
 	if err != nil {
 		log.Printf("  ! договор ГЗ-2026-014: %v", err)
 	}
 	c2, err := svc.Contract.Create(ctx, contractsvc.CreateInput{
-		Name:            "Договор поставки лечебного питания № 77",
-		CustomerAddress: "г. Алматы, пр. Абая, 150, КГУ «Детский реабилитационный центр»",
-		ContractNumber:  "ДП-77/2026", ContractDate: now.AddDate(0, -2, 0), BIN: "210987654321",
+		Name:                 "Договор поставки лечебного питания № 77",
+		CustomerOfficialName: "КГУ «Детский реабилитационный центр» управления здравоохранения г. Алматы",
+		CustomerAddress:      "г. Алматы, пр. Абая, 150, КГУ «Детский реабилитационный центр»",
+		ContractNumber:       "ДП-77/2026", ContractDate: now.AddDate(0, -2, 0), BIN: "210987654321",
 		CreatedBy: admin.ID,
 		Lines: []contractsvc.LineInput{
-			{PositionID: pos["alfamino"], PlannedQuantity: 30, PlannedPrice: priceP(22500)},
-			{PositionID: pos["pepti"], PlannedQuantity: 40},
+			{PositionID: pos["alfamino"], ContractName: "Смесь аминокислотная Alfamino", PlannedQuantity: 30, PlannedPrice: priceP(22500)},
+			{PositionID: pos["pepti"], ContractName: "Смесь Nutrilon Пепти Гастро", PlannedQuantity: 40},
 		},
 	})
 	if err != nil {
@@ -253,7 +281,10 @@ func run(reset bool, password string) error {
 	if c1 != nil {
 		if _, err := svc.Release.Create(ctx, releasesvc.CreateInput{
 			ContractID: c1.ID, Date: now.AddDate(0, 0, -3), Note: "Первая партия по договору",
-			CreatedBy: admin.ID,
+			DocumentNumber:   "1",
+			RecipientName:    c1.Name,
+			RecipientAddress: c1.CustomerAddress,
+			CreatedBy:        admin.ID,
 			Lines: []releasesvc.LineInput{
 				{ContractLineID: c1.Lines[0].ID, PositionID: pos["neocate"], Quantity: 20},
 				{ContractLineID: c1.Lines[1].ID, PositionID: pos["pediasure"], Quantity: 60},
@@ -265,7 +296,10 @@ func run(reset bool, password string) error {
 	if c2 != nil {
 		if _, err := svc.Release.Create(ctx, releasesvc.CreateInput{
 			ContractID: c2.ID, Date: now, Note: "Отпуск по заявке",
-			CreatedBy: admin.ID,
+			DocumentNumber:   "2",
+			RecipientName:    c2.Name,
+			RecipientAddress: c2.CustomerAddress,
+			CreatedBy:        admin.ID,
 			Lines: []releasesvc.LineInput{
 				{ContractLineID: c2.Lines[0].ID, PositionID: pos["alfamino"], Quantity: 10},
 			},

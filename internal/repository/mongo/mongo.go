@@ -18,7 +18,9 @@ const (
 
 	collAdjustments = "adjustments"
 
-	collSettings = "settings"
+	collSettings      = "settings"
+	collOrganizations = "organizations"
+	collSuppliers     = "suppliers"
 )
 
 // caseInsensitiveContains builds a case-insensitive "contains" regex condition

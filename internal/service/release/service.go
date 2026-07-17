@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/FIFSAK/saubala-back/internal/domain/contract"
+	"github.com/FIFSAK/saubala-back/internal/domain/org"
 	"github.com/FIFSAK/saubala-back/internal/domain/position"
 	domain "github.com/FIFSAK/saubala-back/internal/domain/release"
 	"github.com/FIFSAK/saubala-back/pkg/log"
@@ -16,38 +18,48 @@ import (
 	"github.com/FIFSAK/saubala-back/pkg/web"
 )
 
-// Service implements outbound stock operations (releases against a contract).
+// Service implements outbound stock operations: releases against a contract and
+// free (бесплатные) releases without one.
 type Service struct {
 	releases  domain.Repository
 	contracts contract.Repository
 	positions position.Repository
+	orgs      org.Repository
 }
 
-func NewService(releases domain.Repository, contracts contract.Repository, positions position.Repository) *Service {
-	return &Service{releases: releases, contracts: contracts, positions: positions}
+func NewService(releases domain.Repository, contracts contract.Repository, positions position.Repository, orgs org.Repository) *Service {
+	return &Service{releases: releases, contracts: contracts, positions: positions, orgs: orgs}
 }
 
-// LineInput is one stock-out row.
+// LineInput is one stock-out row. ContractLineID is required for contract
+// releases and must be empty for free ones.
 type LineInput struct {
 	ContractLineID string
 	PositionID     string
 	Quantity       int
 }
 
-// CreateInput is the payload for creating a release.
+// CreateInput is the payload for creating a release. The waybill header data
+// (document number, recipient, sender organization) is captured here so the
+// waybill can be generated later without re-entering it.
 type CreateInput struct {
-	ContractID string
-	Date       time.Time
-	Note       string
-	Lines      []LineInput
-	CreatedBy  string
+	ContractID       string // empty for a free release
+	Date             time.Time
+	Note             string
+	DocumentNumber   string
+	RecipientName    string
+	RecipientAddress string
+	OrganizationID   string
+	Lines            []LineInput
+	CreatedBy        string
 }
 
-// Create performs a release against a contract. It validates the contract and
-// its lines, enforces the plan limit, then atomically decrements stock (never
-// going negative) with compensation if the persist step fails. Because dev
-// MongoDB is typically a standalone node without multi-document transactions,
-// multi-line atomicity is achieved with per-line atomic $inc plus compensation.
+// Create performs a release. For contract releases it validates the contract and
+// its lines and enforces the plan limit; for free releases it only checks the
+// positions. It then atomically decrements stock (never going negative) with
+// compensation if the persist step fails. Because dev MongoDB is typically a
+// standalone node without multi-document transactions, multi-line atomicity is
+// achieved with per-line atomic $inc plus compensation.
 //
 // Note: the stock decrement is atomic and can never go negative, but the plan
 // limit (released_so_far + requested <= planned) is a read-then-write check and
@@ -62,32 +74,52 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Release, 
 		lines[i] = domain.Line{ContractLineID: l.ContractLineID, PositionID: l.PositionID, Quantity: l.Quantity}
 	}
 
-	rel, err := domain.New(in.ContractID, in.Date, in.Note, in.CreatedBy, lines)
+	rel, err := domain.New(domain.NewInput{
+		ContractID:       in.ContractID,
+		Date:             in.Date,
+		Note:             in.Note,
+		DocumentNumber:   in.DocumentNumber,
+		RecipientName:    in.RecipientName,
+		RecipientAddress: in.RecipientAddress,
+		OrganizationID:   in.OrganizationID,
+		CreatedBy:        in.CreatedBy,
+		Lines:            lines,
+	})
 	if err != nil {
 		return nil, web.BadRequest(err.Error())
 	}
 
-	c, err := s.contracts.GetByID(ctx, rel.ContractID)
-	if err != nil {
-		if errors.Is(err, store.ErrorNotFound) {
-			return nil, web.NotFound("договор не найден")
+	if rel.OrganizationID != "" {
+		if _, err := s.orgs.GetByID(ctx, rel.OrganizationID); err != nil {
+			if errors.Is(err, store.ErrorNotFound) {
+				return nil, web.BadRequest("организация-отправитель не существует")
+			}
+			return nil, err
 		}
-		return nil, err
 	}
 
-	planned := make(map[string]int, len(c.Lines))
-	for _, cl := range c.Lines {
-		planned[cl.ID] = cl.PlannedQuantity
+	// plannedPrice maps contract line id -> planned sale price (contract releases).
+	plannedPrice := make(map[string]*int64)
+	planned := make(map[string]int)
+	if rel.ContractID != "" {
+		c, err := s.contracts.GetByID(ctx, rel.ContractID)
+		if err != nil {
+			if errors.Is(err, store.ErrorNotFound) {
+				return nil, web.NotFound("договор не найден")
+			}
+			return nil, err
+		}
+		for _, cl := range c.Lines {
+			planned[cl.ID] = cl.PlannedQuantity
+			plannedPrice[cl.ID] = cl.PlannedPrice
+		}
 	}
 
-	// Validate contract-line references, load positions, capture unit costs, and
-	// accumulate the quantity requested per contract line in this call.
+	// Validate contract-line references, load positions, capture unit costs and
+	// sale prices, and accumulate the quantity requested per contract line.
 	requested := make(map[string]int)
 	for i := range rel.Lines {
 		l := &rel.Lines[i]
-		if _, ok := planned[l.ContractLineID]; !ok {
-			return nil, web.BadRequest(fmt.Sprintf("строка договора %s не принадлежит этому договору", l.ContractLineID))
-		}
 		p, err := s.positions.GetByID(ctx, l.PositionID)
 		if err != nil {
 			if errors.Is(err, store.ErrorNotFound) {
@@ -96,19 +128,28 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Release, 
 			return nil, err
 		}
 		l.UnitCost = p.PurchasePrice
-		requested[l.ContractLineID] += l.Quantity
+		if rel.ContractID != "" {
+			if _, ok := planned[l.ContractLineID]; !ok {
+				return nil, web.BadRequest(fmt.Sprintf("строка договора %s не принадлежит этому договору", l.ContractLineID))
+			}
+			l.UnitPrice = UnitPrice(plannedPrice[l.ContractLineID], p.PurchasePrice)
+			requested[l.ContractLineID] += l.Quantity
+		}
+		// Free releases keep UnitPrice = 0: they are shipped free of charge.
 	}
 
 	// Plan control: already-released + requested must not exceed the plan.
-	releasedSoFar, err := s.releases.ReleasedByContract(ctx, c.ID)
-	if err != nil {
-		return nil, err
-	}
-	for lineID, reqQty := range requested {
-		if releasedSoFar[lineID]+reqQty > planned[lineID] {
-			return nil, web.Unprocessable(fmt.Sprintf(
-				"отгрузка превышает план по строке договора %s (план %d, уже отгружено %d, запрошено %d)",
-				lineID, planned[lineID], releasedSoFar[lineID], reqQty))
+	if rel.ContractID != "" {
+		releasedSoFar, err := s.releases.ReleasedByContract(ctx, rel.ContractID)
+		if err != nil {
+			return nil, err
+		}
+		for lineID, reqQty := range requested {
+			if releasedSoFar[lineID]+reqQty > planned[lineID] {
+				return nil, web.Unprocessable(fmt.Sprintf(
+					"отгрузка превышает план по строке договора %s (план %d, уже отгружено %d, запрошено %d)",
+					lineID, planned[lineID], releasedSoFar[lineID], reqQty))
+			}
 		}
 	}
 
@@ -148,6 +189,39 @@ func (s *Service) Get(ctx context.Context, id string) (*domain.Release, error) {
 	return r, nil
 }
 
+// UpdateWaybill updates the waybill header fields of a release (document
+// number, recipient, sender organization). Stock and lines are immutable —
+// this exists so waybill data entered at download time for older releases is
+// remembered instead of being asked again.
+func (s *Service) UpdateWaybill(ctx context.Context, id string, u domain.WaybillUpdate) (*domain.Release, error) {
+	trim := func(p *string) {
+		if p != nil {
+			*p = strings.TrimSpace(*p)
+		}
+	}
+	trim(u.DocumentNumber)
+	trim(u.RecipientName)
+	trim(u.RecipientAddress)
+	trim(u.OrganizationID)
+
+	if u.OrganizationID != nil && *u.OrganizationID != "" {
+		if _, err := s.orgs.GetByID(ctx, *u.OrganizationID); err != nil {
+			if errors.Is(err, store.ErrorNotFound) {
+				return nil, web.BadRequest("организация-отправитель не существует")
+			}
+			return nil, err
+		}
+	}
+
+	if err := s.releases.UpdateWaybill(ctx, id, u); err != nil {
+		if errors.Is(err, store.ErrorNotFound) {
+			return nil, web.NotFound("отгрузка не найдена")
+		}
+		return nil, err
+	}
+	return s.Get(ctx, id)
+}
+
 func (s *Service) List(ctx context.Context, f domain.Filter) ([]domain.Release, int64, error) {
 	return s.releases.List(ctx, f)
 }
@@ -164,13 +238,31 @@ type PositionRef struct {
 	LotNumber string
 }
 
-// Refs batch-loads the contract and position labels referenced by the given
-// releases, so responses carry human-readable names instead of bare IDs.
-func (s *Service) Refs(ctx context.Context, rels []domain.Release) (map[string]ContractRef, map[string]PositionRef, error) {
+// Refs is the batch-loaded reference data of a set of releases: contract and
+// position labels, sender organization names, and the pricing fallbacks used to
+// value lines persisted before sale prices were stored (planned contract-line
+// prices and position purchase prices).
+type Refs struct {
+	Contracts     map[string]ContractRef
+	Positions     map[string]PositionRef
+	Organizations map[string]string // organization id -> name
+	plannedPrice  map[string]*int64 // contract line id -> planned price
+	purchasePrice map[string]int64  // position id -> purchase price
+}
+
+// Refs batch-loads the reference data of the given releases, so responses carry
+// human-readable names instead of bare IDs and every line can be priced.
+func (s *Service) Refs(ctx context.Context, rels []domain.Release) (*Refs, error) {
 	contractIDs := make(map[string]struct{})
 	positionIDs := make(map[string]struct{})
+	orgIDs := make(map[string]struct{})
 	for i := range rels {
-		contractIDs[rels[i].ContractID] = struct{}{}
+		if rels[i].ContractID != "" {
+			contractIDs[rels[i].ContractID] = struct{}{}
+		}
+		if rels[i].OrganizationID != "" {
+			orgIDs[rels[i].OrganizationID] = struct{}{}
+		}
 		for _, l := range rels[i].Lines {
 			positionIDs[l.PositionID] = struct{}{}
 		}
@@ -178,22 +270,74 @@ func (s *Service) Refs(ctx context.Context, rels []domain.Release) (map[string]C
 
 	contracts, err := s.contracts.GetByIDs(ctx, keys(contractIDs))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	positions, err := s.positions.GetByIDs(ctx, keys(positionIDs))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
+	}
+	orgs, err := s.orgs.GetByIDs(ctx, keys(orgIDs))
+	if err != nil {
+		return nil, err
 	}
 
-	crefs := make(map[string]ContractRef, len(contracts))
+	refs := &Refs{
+		Contracts:     make(map[string]ContractRef, len(contracts)),
+		Positions:     make(map[string]PositionRef, len(positions)),
+		Organizations: make(map[string]string, len(orgs)),
+		plannedPrice:  make(map[string]*int64),
+		purchasePrice: make(map[string]int64, len(positions)),
+	}
 	for i := range contracts {
-		crefs[contracts[i].ID] = ContractRef{Number: contracts[i].ContractNumber, Name: contracts[i].Name}
+		refs.Contracts[contracts[i].ID] = ContractRef{Number: contracts[i].ContractNumber, Name: contracts[i].Name}
+		for _, cl := range contracts[i].Lines {
+			refs.plannedPrice[cl.ID] = cl.PlannedPrice
+		}
 	}
-	prefs := make(map[string]PositionRef, len(positions))
 	for i := range positions {
-		prefs[positions[i].ID] = PositionRef{Name: positions[i].Name, LotNumber: positions[i].LotNumber}
+		refs.Positions[positions[i].ID] = PositionRef{Name: positions[i].Name, LotNumber: positions[i].LotNumber}
+		refs.purchasePrice[positions[i].ID] = positions[i].PurchasePrice
 	}
-	return crefs, prefs, nil
+	for i := range orgs {
+		refs.Organizations[orgs[i].ID] = orgs[i].Name
+	}
+	return refs, nil
+}
+
+// LineUnitPrice returns the effective sale price of a release line: the price
+// stored at release time when present, else (for contract releases persisted
+// before prices were stored) the planned contract-line price falling back to the
+// position purchase price. Free-release lines are always 0.
+func (r *Refs) LineUnitPrice(l domain.Line) int64 {
+	if l.UnitPrice > 0 {
+		return l.UnitPrice
+	}
+	if l.ContractLineID == "" {
+		return 0
+	}
+	purchase := r.purchasePrice[l.PositionID]
+	if purchase == 0 {
+		purchase = l.UnitCost
+	}
+	return UnitPrice(r.plannedPrice[l.ContractLineID], purchase)
+}
+
+// Amount returns the total sale value («сумма отгрузки») of a release.
+func (r *Refs) Amount(rel *domain.Release) int64 {
+	var sum int64
+	for _, l := range rel.Lines {
+		sum += r.LineUnitPrice(l) * int64(l.Quantity)
+	}
+	return sum
+}
+
+// UnitPrice picks the sale price of a contract-release line: the planned
+// contract-line price when present, else the position purchase price.
+func UnitPrice(planned *int64, purchasePrice int64) int64 {
+	if planned != nil {
+		return *planned
+	}
+	return purchasePrice
 }
 
 func keys(set map[string]struct{}) []string {

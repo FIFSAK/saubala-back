@@ -6,10 +6,12 @@ import (
 	brandsvc "github.com/FIFSAK/saubala-back/internal/service/brand"
 	contractsvc "github.com/FIFSAK/saubala-back/internal/service/contract"
 	invoicesvc "github.com/FIFSAK/saubala-back/internal/service/invoice"
+	orgsvc "github.com/FIFSAK/saubala-back/internal/service/org"
 	positionsvc "github.com/FIFSAK/saubala-back/internal/service/position"
 	receiptsvc "github.com/FIFSAK/saubala-back/internal/service/receipt"
 	releasesvc "github.com/FIFSAK/saubala-back/internal/service/release"
 	settingssvc "github.com/FIFSAK/saubala-back/internal/service/settings"
+	suppliersvc "github.com/FIFSAK/saubala-back/internal/service/supplier"
 	usersvc "github.com/FIFSAK/saubala-back/internal/service/user"
 	"github.com/FIFSAK/saubala-back/pkg/auth"
 )
@@ -35,6 +37,8 @@ type Services struct {
 	Contract *contractsvc.Service
 	Release  *releasesvc.Service
 	Settings *settingssvc.Service
+	Org      *orgsvc.Service
+	Supplier *suppliersvc.Service
 	Invoice  *invoicesvc.Service
 }
 
@@ -75,6 +79,7 @@ func WithPositionService() Configuration {
 		s.Position = positionsvc.NewService(
 			s.deps.Repositories.Position,
 			s.deps.Repositories.Brand,
+			s.deps.Repositories.Supplier,
 			s.deps.Repositories.Receipt,
 			s.deps.Repositories.Release,
 			s.deps.Repositories.Contract,
@@ -86,7 +91,12 @@ func WithPositionService() Configuration {
 
 func WithReceiptService() Configuration {
 	return func(s *Services) error {
-		s.Receipt = receiptsvc.NewService(s.deps.Repositories.Receipt, s.deps.Repositories.Position)
+		s.Receipt = receiptsvc.NewService(
+			s.deps.Repositories.Receipt,
+			s.deps.Repositories.Position,
+			s.deps.Repositories.Brand,
+			s.deps.Repositories.Supplier,
+		)
 		return nil
 	}
 }
@@ -108,6 +118,7 @@ func WithReleaseService() Configuration {
 			s.deps.Repositories.Release,
 			s.deps.Repositories.Contract,
 			s.deps.Repositories.Position,
+			s.deps.Repositories.Org,
 		)
 		return nil
 	}
@@ -120,12 +131,31 @@ func WithSettingsService() Configuration {
 	}
 }
 
+func WithOrgService() Configuration {
+	return func(s *Services) error {
+		s.Org = orgsvc.NewService(s.deps.Repositories.Org, s.deps.Repositories.Release)
+		return nil
+	}
+}
+
+func WithSupplierService() Configuration {
+	return func(s *Services) error {
+		s.Supplier = suppliersvc.NewService(
+			s.deps.Repositories.Supplier,
+			s.deps.Repositories.Position,
+			s.deps.Repositories.Receipt,
+		)
+		return nil
+	}
+}
+
 func WithInvoiceService() Configuration {
 	return func(s *Services) error {
 		s.Invoice = invoicesvc.NewService(
 			s.deps.Repositories.Release,
 			s.deps.Repositories.Contract,
 			s.deps.Repositories.Position,
+			s.deps.Repositories.Org,
 			s.deps.Repositories.Settings,
 		)
 		return nil

@@ -218,6 +218,11 @@ func parseItem(sheet string, rowNum int, row []string, remainderCol int, report 
 		Unit:         clean(cell(row, 2)),
 		SwapFixed:    swapped,
 	}
+	// Column A in some rows still holds the untouched sample value of the source
+	// workbook's dropdown («Пирожное бисквитное») — not a real tender name.
+	if line.OfficialName == "Пирожное бисквитное" {
+		line.OfficialName = ""
+	}
 	line.ProductName = clean(cell(row, 3))
 	if line.ProductName == "" {
 		line.ProductName = line.OfficialName

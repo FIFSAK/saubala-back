@@ -13,41 +13,28 @@ import (
 	"github.com/FIFSAK/saubala-back/pkg/store"
 )
 
+// settingsDoc keeps only the invoice defaults; legacy seller fields that older
+// versions stored on the same document are simply ignored on decode.
 type settingsDoc struct {
 	ID                    string    `bson:"_id"`
-	OrgName               string    `bson:"org_name"`
-	BIN                   string    `bson:"bin"`
-	ResponsibleForSupply  string    `bson:"responsible_for_supply"`
-	Director              string    `bson:"director"`
-	Accountant            string    `bson:"accountant"`
 	VATRatePercent        int       `bson:"vat_rate_percent"`
 	LineDescriptionPrefix string    `bson:"line_description_prefix"`
 	DefaultUnit           string    `bson:"default_unit"`
 	UpdatedAt             time.Time `bson:"updated_at"`
 }
 
-func toSettingsDoc(o *settings.Organization) settingsDoc {
+func toSettingsDoc(s *settings.Settings) settingsDoc {
 	return settingsDoc{
 		ID:                    settings.ID,
-		OrgName:               o.OrgName,
-		BIN:                   o.BIN,
-		ResponsibleForSupply:  o.ResponsibleForSupply,
-		Director:              o.Director,
-		Accountant:            o.Accountant,
-		VATRatePercent:        o.VATRatePercent,
-		LineDescriptionPrefix: o.LineDescriptionPrefix,
-		DefaultUnit:           o.DefaultUnit,
-		UpdatedAt:             o.UpdatedAt,
+		VATRatePercent:        s.VATRatePercent,
+		LineDescriptionPrefix: s.LineDescriptionPrefix,
+		DefaultUnit:           s.DefaultUnit,
+		UpdatedAt:             s.UpdatedAt,
 	}
 }
 
-func (d settingsDoc) toDomain() *settings.Organization {
-	return &settings.Organization{
-		OrgName:               d.OrgName,
-		BIN:                   d.BIN,
-		ResponsibleForSupply:  d.ResponsibleForSupply,
-		Director:              d.Director,
-		Accountant:            d.Accountant,
+func (d settingsDoc) toDomain() *settings.Settings {
+	return &settings.Settings{
 		VATRatePercent:        d.VATRatePercent,
 		LineDescriptionPrefix: d.LineDescriptionPrefix,
 		DefaultUnit:           d.DefaultUnit,
@@ -64,7 +51,7 @@ func NewSettingsRepository(db *mongo.Database) *SettingsRepository {
 	return &SettingsRepository{coll: db.Collection(collSettings)}
 }
 
-func (r *SettingsRepository) Get(ctx context.Context) (*settings.Organization, error) {
+func (r *SettingsRepository) Get(ctx context.Context) (*settings.Settings, error) {
 	var d settingsDoc
 	if err := r.coll.FindOne(ctx, bson.M{"_id": settings.ID}).Decode(&d); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
@@ -75,8 +62,8 @@ func (r *SettingsRepository) Get(ctx context.Context) (*settings.Organization, e
 	return d.toDomain(), nil
 }
 
-func (r *SettingsRepository) Upsert(ctx context.Context, o *settings.Organization) error {
-	doc := toSettingsDoc(o)
+func (r *SettingsRepository) Upsert(ctx context.Context, s *settings.Settings) error {
+	doc := toSettingsDoc(s)
 	_, err := r.coll.UpdateOne(ctx,
 		bson.M{"_id": settings.ID},
 		bson.M{"$set": doc},

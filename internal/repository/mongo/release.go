@@ -14,20 +14,25 @@ import (
 )
 
 type releaseLineDoc struct {
-	ContractLineID string `bson:"contract_line_id"`
+	ContractLineID string `bson:"contract_line_id,omitempty"`
 	PositionID     string `bson:"position_id"`
 	Quantity       int    `bson:"quantity"`
 	UnitCost       int64  `bson:"unit_cost"`
+	UnitPrice      int64  `bson:"unit_price,omitempty"`
 }
 
 type releaseDoc struct {
-	ID         string           `bson:"_id"`
-	ContractID string           `bson:"contract_id"`
-	Date       time.Time        `bson:"date"`
-	Note       string           `bson:"note"`
-	Lines      []releaseLineDoc `bson:"lines"`
-	CreatedBy  string           `bson:"created_by"`
-	CreatedAt  time.Time        `bson:"created_at"`
+	ID               string           `bson:"_id"`
+	ContractID       string           `bson:"contract_id,omitempty"`
+	Date             time.Time        `bson:"date"`
+	Note             string           `bson:"note"`
+	DocumentNumber   string           `bson:"document_number,omitempty"`
+	RecipientName    string           `bson:"recipient_name,omitempty"`
+	RecipientAddress string           `bson:"recipient_address,omitempty"`
+	OrganizationID   string           `bson:"organization_id,omitempty"`
+	Lines            []releaseLineDoc `bson:"lines"`
+	CreatedBy        string           `bson:"created_by"`
+	CreatedAt        time.Time        `bson:"created_at"`
 }
 
 func toReleaseDoc(r *release.Release) releaseDoc {
@@ -38,16 +43,21 @@ func toReleaseDoc(r *release.Release) releaseDoc {
 			PositionID:     l.PositionID,
 			Quantity:       l.Quantity,
 			UnitCost:       l.UnitCost,
+			UnitPrice:      l.UnitPrice,
 		}
 	}
 	return releaseDoc{
-		ID:         r.ID,
-		ContractID: r.ContractID,
-		Date:       r.Date,
-		Note:       r.Note,
-		Lines:      lines,
-		CreatedBy:  r.CreatedBy,
-		CreatedAt:  r.CreatedAt,
+		ID:               r.ID,
+		ContractID:       r.ContractID,
+		Date:             r.Date,
+		Note:             r.Note,
+		DocumentNumber:   r.DocumentNumber,
+		RecipientName:    r.RecipientName,
+		RecipientAddress: r.RecipientAddress,
+		OrganizationID:   r.OrganizationID,
+		Lines:            lines,
+		CreatedBy:        r.CreatedBy,
+		CreatedAt:        r.CreatedAt,
 	}
 }
 
@@ -59,16 +69,21 @@ func (d releaseDoc) toDomain() *release.Release {
 			PositionID:     l.PositionID,
 			Quantity:       l.Quantity,
 			UnitCost:       l.UnitCost,
+			UnitPrice:      l.UnitPrice,
 		}
 	}
 	return &release.Release{
-		ID:         d.ID,
-		ContractID: d.ContractID,
-		Date:       d.Date,
-		Note:       d.Note,
-		Lines:      lines,
-		CreatedBy:  d.CreatedBy,
-		CreatedAt:  d.CreatedAt,
+		ID:               d.ID,
+		ContractID:       d.ContractID,
+		Date:             d.Date,
+		Note:             d.Note,
+		DocumentNumber:   d.DocumentNumber,
+		RecipientName:    d.RecipientName,
+		RecipientAddress: d.RecipientAddress,
+		OrganizationID:   d.OrganizationID,
+		Lines:            lines,
+		CreatedBy:        d.CreatedBy,
+		CreatedAt:        d.CreatedAt,
 	}
 }
 
@@ -102,10 +117,42 @@ func (r *ReleaseRepository) GetByID(ctx context.Context, id string) (*release.Re
 	return d.toDomain(), nil
 }
 
+func (r *ReleaseRepository) UpdateWaybill(ctx context.Context, id string, u release.WaybillUpdate) error {
+	set := bson.M{}
+	if u.DocumentNumber != nil {
+		set["document_number"] = *u.DocumentNumber
+	}
+	if u.RecipientName != nil {
+		set["recipient_name"] = *u.RecipientName
+	}
+	if u.RecipientAddress != nil {
+		set["recipient_address"] = *u.RecipientAddress
+	}
+	if u.OrganizationID != nil {
+		set["organization_id"] = *u.OrganizationID
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	res, err := r.coll.UpdateByID(ctx, id, bson.M{"$set": set})
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return store.ErrorNotFound
+	}
+	return nil
+}
+
 func (r *ReleaseRepository) List(ctx context.Context, f release.Filter) ([]release.Release, int64, error) {
 	filter := bson.M{}
 	if f.ContractID != "" {
 		filter["contract_id"] = f.ContractID
+	} else if f.OnlyFree {
+		filter["$or"] = bson.A{
+			bson.M{"contract_id": bson.M{"$exists": false}},
+			bson.M{"contract_id": ""},
+		}
 	}
 	if f.DateFrom != nil || f.DateTo != nil {
 		date := bson.M{}
@@ -196,4 +243,52 @@ func (r *ReleaseRepository) ReleasedByContract(ctx context.Context, contractID s
 		out[row.ID] = row.Total
 	}
 	return out, nil
+}
+
+func (r *ReleaseRepository) ReleasedByContracts(ctx context.Context, contractIDs []string) (map[string]map[string]int, error) {
+	if len(contractIDs) == 0 {
+		return map[string]map[string]int{}, nil
+	}
+	pipeline := mongo.Pipeline{
+		bson.D{{Key: "$match", Value: bson.M{"contract_id": bson.M{"$in": contractIDs}}}},
+		bson.D{{Key: "$unwind", Value: "$lines"}},
+		bson.D{{Key: "$group", Value: bson.M{
+			"_id": bson.M{
+				"contract_id": "$contract_id",
+				"line_id":     "$lines.contract_line_id",
+			},
+			"total": bson.M{"$sum": "$lines.quantity"},
+		}}},
+	}
+	cur, err := r.coll.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	var rows []struct {
+		ID struct {
+			ContractID string `bson:"contract_id"`
+			LineID     string `bson:"line_id"`
+		} `bson:"_id"`
+		Total int `bson:"total"`
+	}
+	if err := cur.All(ctx, &rows); err != nil {
+		return nil, err
+	}
+
+	out := make(map[string]map[string]int)
+	for _, row := range rows {
+		m := out[row.ID.ContractID]
+		if m == nil {
+			m = make(map[string]int)
+			out[row.ID.ContractID] = m
+		}
+		m[row.ID.LineID] = row.Total
+	}
+	return out, nil
+}
+
+func (r *ReleaseRepository) CountByOrganization(ctx context.Context, organizationID string) (int64, error) {
+	return r.coll.CountDocuments(ctx, bson.M{"organization_id": organizationID})
 }

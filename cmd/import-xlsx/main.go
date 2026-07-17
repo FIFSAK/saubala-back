@@ -289,8 +289,13 @@ func importAll(contracts []*parsedContract, products map[string]*product) error 
 				plan = d
 			}
 			price := l.PriceTiyn
+			contractName := ""
+			if p, ok := products[strings.ToLower(l.ProductName)]; ok {
+				contractName = p.OfficialName
+			}
 			inputs[i] = contractsvc.LineInput{
 				PositionID:      positionIDs[strings.ToLower(l.ProductName)],
+				ContractName:    contractName,
 				PlannedQuantity: plan,
 				PlannedPrice:    &price,
 			}
@@ -334,11 +339,13 @@ func importAll(contracts []*parsedContract, products map[string]*product) error 
 				continue
 			}
 			if _, err := svc.Release.Create(ctx, releasesvc.CreateInput{
-				ContractID: created.ID,
-				Date:       c.Date,
-				Note:       fmt.Sprintf("Импорт из Excel: поставка %d", batch+1),
-				Lines:      lines,
-				CreatedBy:  admin.ID,
+				ContractID:       created.ID,
+				Date:             c.Date,
+				Note:             fmt.Sprintf("Импорт из Excel: поставка %d", batch+1),
+				RecipientName:    c.Name,
+				RecipientAddress: c.Address,
+				Lines:            lines,
+				CreatedBy:        admin.ID,
 			}); err != nil {
 				return fmt.Errorf("отгрузка %d по договору %s: %w", batch+1, c.Number, err)
 			}

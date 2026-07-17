@@ -31,19 +31,24 @@ type receiptLineDTO struct {
 	PositionID   string `json:"position_id"`
 	PositionName string `json:"position_name"`
 	LotNumber    string `json:"lot_number"`
+	BrandName    string `json:"brand_name"`
 	Quantity     int    `json:"quantity"`
 }
 
 type receiptResponse struct {
-	ID        string           `json:"id"`
-	Date      time.Time        `json:"date"`
-	Note      string           `json:"note"`
-	Lines     []receiptLineDTO `json:"lines"`
-	CreatedBy string           `json:"created_by"`
-	CreatedAt time.Time        `json:"created_at"`
+	ID            string           `json:"id"`
+	Date          time.Time        `json:"date"`
+	Note          string           `json:"note"`
+	SupplierID    string           `json:"supplier_id"`
+	SupplierName  string           `json:"supplier_name"`
+	Counterparty  string           `json:"counterparty"` // legacy free-text supplier of old receipts
+	InvoiceAmount int64            `json:"invoice_amount"`
+	Lines         []receiptLineDTO `json:"lines"`
+	CreatedBy     string           `json:"created_by"`
+	CreatedAt     time.Time        `json:"created_at"`
 }
 
-func toReceiptResponse(rec *domain.Receipt, prefs map[string]receiptsvc.PositionRef) receiptResponse {
+func toReceiptResponse(rec *domain.Receipt, prefs map[string]receiptsvc.PositionRef, supplierNames map[string]string) receiptResponse {
 	lines := make([]receiptLineDTO, len(rec.Lines))
 	for i, l := range rec.Lines {
 		pref := prefs[l.PositionID]
@@ -51,16 +56,21 @@ func toReceiptResponse(rec *domain.Receipt, prefs map[string]receiptsvc.Position
 			PositionID:   l.PositionID,
 			PositionName: pref.Name,
 			LotNumber:    pref.LotNumber,
+			BrandName:    pref.BrandName,
 			Quantity:     l.Quantity,
 		}
 	}
 	return receiptResponse{
-		ID:        rec.ID,
-		Date:      rec.Date,
-		Note:      rec.Note,
-		Lines:     lines,
-		CreatedBy: rec.CreatedBy,
-		CreatedAt: rec.CreatedAt,
+		ID:            rec.ID,
+		Date:          rec.Date,
+		Note:          rec.Note,
+		SupplierID:    rec.SupplierID,
+		SupplierName:  supplierNames[rec.SupplierID],
+		Counterparty:  rec.Counterparty,
+		InvoiceAmount: rec.InvoiceAmount,
+		Lines:         lines,
+		CreatedBy:     rec.CreatedBy,
+		CreatedAt:     rec.CreatedAt,
 	}
 }
 
@@ -70,9 +80,11 @@ type receiptLineRequest struct {
 }
 
 type createReceiptRequest struct {
-	Date  time.Time            `json:"date"`
-	Note  string               `json:"note"`
-	Lines []receiptLineRequest `json:"lines"`
+	Date          time.Time            `json:"date"`
+	Note          string               `json:"note"`
+	SupplierID    string               `json:"supplier_id"`
+	InvoiceAmount int64                `json:"invoice_amount"`
+	Lines         []receiptLineRequest `json:"lines"`
 }
 
 func (h *ReceiptHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -90,6 +102,7 @@ func (h *ReceiptHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	receipts, total, err := h.receipts.List(r.Context(), domain.Filter{
 		PositionID: r.URL.Query().Get("position_id"),
+		SupplierID: r.URL.Query().Get("supplier_id"),
 		DateFrom:   from,
 		DateTo:     to,
 		Page:       p.Page,
@@ -106,9 +119,14 @@ func (h *ReceiptHandler) List(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
+	supplierNames, err := h.receipts.SupplierNames(r.Context(), receipts)
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
 	items := make([]receiptResponse, len(receipts))
 	for i := range receipts {
-		items[i] = toReceiptResponse(&receipts[i], prefs)
+		items[i] = toReceiptResponse(&receipts[i], prefs, supplierNames)
 	}
 	web.List(w, items, total, p)
 }
@@ -127,21 +145,18 @@ func (h *ReceiptHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rec, err := h.receipts.Create(r.Context(), receiptsvc.CreateInput{
-		Date:      req.Date,
-		Note:      req.Note,
-		Lines:     lines,
-		CreatedBy: actorID(actor),
+		Date:          req.Date,
+		Note:          req.Note,
+		SupplierID:    req.SupplierID,
+		InvoiceAmount: req.InvoiceAmount,
+		Lines:         lines,
+		CreatedBy:     actorID(actor),
 	})
 	if err != nil {
 		web.WriteError(w, err)
 		return
 	}
-	prefs, err := h.receipts.PositionRefs(r.Context(), []domain.Receipt{*rec})
-	if err != nil {
-		web.WriteError(w, err)
-		return
-	}
-	web.JSON(w, http.StatusCreated, toReceiptResponse(rec, prefs))
+	h.respondReceipt(w, r, http.StatusCreated, rec)
 }
 
 func (h *ReceiptHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -150,10 +165,20 @@ func (h *ReceiptHandler) Get(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
+	h.respondReceipt(w, r, http.StatusOK, rec)
+}
+
+// respondReceipt enriches and writes a single receipt.
+func (h *ReceiptHandler) respondReceipt(w http.ResponseWriter, r *http.Request, status int, rec *domain.Receipt) {
 	prefs, err := h.receipts.PositionRefs(r.Context(), []domain.Receipt{*rec})
 	if err != nil {
 		web.WriteError(w, err)
 		return
 	}
-	web.JSON(w, http.StatusOK, toReceiptResponse(rec, prefs))
+	supplierNames, err := h.receipts.SupplierNames(r.Context(), []domain.Receipt{*rec})
+	if err != nil {
+		web.WriteError(w, err)
+		return
+	}
+	web.JSON(w, status, toReceiptResponse(rec, prefs, supplierNames))
 }

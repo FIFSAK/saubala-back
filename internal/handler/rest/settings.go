@@ -11,9 +11,9 @@ import (
 	"github.com/FIFSAK/saubala-back/pkg/web"
 )
 
-// SettingsHandler exposes the organization settings singleton (seller details +
-// invoice defaults). Reads are open to any authenticated user (the invoice form
-// prefills from them); writes require an admin (mounted under RequireAdmin).
+// SettingsHandler exposes the settings singleton (invoice defaults). Reads are
+// open to any authenticated user (the invoice form prefills from them); writes
+// require an admin (mounted under RequireAdmin).
 type SettingsHandler struct {
 	settings *settingssvc.Service
 }
@@ -33,49 +33,34 @@ func (h *SettingsHandler) RegisterWrite(r chi.Router) {
 }
 
 type settingsResponse struct {
-	OrgName               string    `json:"org_name"`
-	BIN                   string    `json:"bin"`
-	ResponsibleForSupply  string    `json:"responsible_for_supply"`
-	Director              string    `json:"director"`
-	Accountant            string    `json:"accountant"`
 	VATRatePercent        int       `json:"vat_rate_percent"`
 	LineDescriptionPrefix string    `json:"line_description_prefix"`
 	DefaultUnit           string    `json:"default_unit"`
 	UpdatedAt             time.Time `json:"updated_at"`
 }
 
-func toSettingsResponse(o *domain.Organization) settingsResponse {
+func toSettingsResponse(s *domain.Settings) settingsResponse {
 	return settingsResponse{
-		OrgName:               o.OrgName,
-		BIN:                   o.BIN,
-		ResponsibleForSupply:  o.ResponsibleForSupply,
-		Director:              o.Director,
-		Accountant:            o.Accountant,
-		VATRatePercent:        o.VATRatePercent,
-		LineDescriptionPrefix: o.LineDescriptionPrefix,
-		DefaultUnit:           o.DefaultUnit,
-		UpdatedAt:             o.UpdatedAt,
+		VATRatePercent:        s.VATRatePercent,
+		LineDescriptionPrefix: s.LineDescriptionPrefix,
+		DefaultUnit:           s.DefaultUnit,
+		UpdatedAt:             s.UpdatedAt,
 	}
 }
 
 type updateSettingsRequest struct {
-	OrgName               string `json:"org_name"`
-	BIN                   string `json:"bin"`
-	ResponsibleForSupply  string `json:"responsible_for_supply"`
-	Director              string `json:"director"`
-	Accountant            string `json:"accountant"`
 	VATRatePercent        int    `json:"vat_rate_percent"`
 	LineDescriptionPrefix string `json:"line_description_prefix"`
 	DefaultUnit           string `json:"default_unit"`
 }
 
 func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
-	o, err := h.settings.Get(r.Context())
+	s, err := h.settings.Get(r.Context())
 	if err != nil {
 		web.WriteError(w, err)
 		return
 	}
-	web.JSON(w, http.StatusOK, toSettingsResponse(o))
+	web.JSON(w, http.StatusOK, toSettingsResponse(s))
 }
 
 func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -84,17 +69,12 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		web.WriteError(w, err)
 		return
 	}
-	o := &domain.Organization{
-		OrgName:               req.OrgName,
-		BIN:                   req.BIN,
-		ResponsibleForSupply:  req.ResponsibleForSupply,
-		Director:              req.Director,
-		Accountant:            req.Accountant,
+	s := &domain.Settings{
 		VATRatePercent:        req.VATRatePercent,
 		LineDescriptionPrefix: req.LineDescriptionPrefix,
 		DefaultUnit:           req.DefaultUnit,
 	}
-	updated, err := h.settings.Update(r.Context(), o)
+	updated, err := h.settings.Update(r.Context(), s)
 	if err != nil {
 		web.WriteError(w, err)
 		return

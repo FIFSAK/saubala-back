@@ -63,7 +63,9 @@ Layers and their dependency direction (outer depends on inner):
   validation (`New(...)` constructors return plain `error`), and value types;
   `repository.go` declares the `Repository` **interface** (the persistence port)
   and the `Filter` type. No framework imports. Entities: `user`, `brand`,
-  `position`, `receipt`, `release`, `contract`.
+  `position`, `receipt`, `release`, `contract`, `org` (sender organizations),
+  `supplier` (справочник поставщиков: kz = name+BIN, foreign = name+country),
+  `settings` (invoice-defaults singleton), `adjustment`.
 - **`internal/repository/mongo/`** — Mongo adapters implementing the domain
   `Repository` interfaces. `internal/repository/repository.go` aggregates them and
   `WithMongoStore` wires each one + calls `EnsureIndexes`.
@@ -96,6 +98,29 @@ Layers and their dependency direction (outer depends on inner):
   writing the receipt ledger entry, and rolls back on failure, so a persisted
   receipt always corresponds to applied stock (no compensating-transaction orphans —
   there are no multi-document Mongo transactions here).
+- **Releases carry their waybill data:** the waybill header (document number,
+  recipient name/address, sender `organization_id`) and per-line sale prices
+  (`unit_price` = contract planned price, else position purchase price) are
+  captured **at release time**; `POST /releases/{id}/invoice` uses the stored
+  values (request fields are optional overrides, recipient falls back to the
+  contract for legacy rows). `contract_id` is optional — a release without one is
+  a free (бесплатная) shipment: no plan control, `unit_price` 0.
+- **Sender organizations are plural:** `organizations` is a small CRUD collection
+  (ТОО «Смак-МН», ИП «Онко», …), one chosen per release and printed as the
+  waybill seller; the first one is seeded on startup. The `settings` singleton
+  keeps only the invoice defaults (VAT %, line prefix, unit).
+- **Suppliers are a reference:** positions optionally carry `supplier_id`
+  (`GET /positions?supplier_id=` filters — the receipt form shows only the
+  chosen supplier's positions), receipts reference the supplier instead of the
+  legacy free-text `counterparty` (kept read-only for old rows; opening-balance
+  receipts inherit the position's supplier). The suppliers list enriches each
+  row with `invoice_total` (Σ receipt invoice amounts). Deletion is blocked
+  while positions/receipts reference the supplier.
+- **Contract-specific product names live on contract lines:** `contract.Line`
+  has optional `ContractName` (наименование по договору) and `NTIN`; responses
+  fall back to the legacy position-level `contract_name` when the line's is
+  empty, and the waybill prefers the line name. Contract responses also carry
+  `total_amount`/`released_amount` (planned-price × planned/released qty).
 - **Auth & roles:** all routes except `POST /auth/login` require a Bearer JWT
   (`middleware.Authenticator` loads the user, rejects inactive accounts, stores it
   in context via `CurrentUser`). User-management routes additionally require
@@ -145,10 +170,13 @@ a global `ssr: false` crashes `nuxt dev` on Nuxt 3.21 + Vite 7). Commands:
   converts (`formatTenge`, `inputToTiyn`, `formatDate`, …). `<MoneyInput>` binds a
   tiyn `number` while displaying tenge.
 - **Layout:** `pages/` (login, index dashboard, brands, positions, receipts,
-  contracts, releases, users); `layouts/` (`default` app shell, `auth`); shared
-  components are auto-imported (`DataTable`, `Pagination`, `AppModal`, `AppDrawer`,
-  `Badge`, `Field`, `SearchInput`, `ToastHost`, `ConfirmHost`, `AppSidebar` /
-  `AppTopbar`). `stores/ui.ts` drives toasts + confirm dialogs.
+  contracts + `contracts/[id]` profile, releases, users, settings — admin-only,
+  organizations CRUD + invoice defaults); `layouts/` (`default` app shell,
+  `auth`); shared components are auto-imported (`DataTable`, `Pagination`,
+  `AppModal`, `AppDrawer`, `Badge`, `Field`, `SearchInput`, `ToastHost`,
+  `ConfirmHost`, `AppSidebar` / `AppTopbar`). `stores/ui.ts` drives toasts +
+  confirm dialogs. Waybills download from the releases page (XLSX/PDF, POST
+  with `responseType: 'blob'`).
 
 **Design rules (deliberate — keep them):** this is a dense, utilitarian tool, not
 a landing page. IBM Plex Sans + IBM Plex Mono (mono for numbers/IDs/money), a warm

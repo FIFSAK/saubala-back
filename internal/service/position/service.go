@@ -12,6 +12,7 @@ import (
 	domain "github.com/FIFSAK/saubala-back/internal/domain/position"
 	"github.com/FIFSAK/saubala-back/internal/domain/receipt"
 	"github.com/FIFSAK/saubala-back/internal/domain/release"
+	"github.com/FIFSAK/saubala-back/internal/domain/supplier"
 	"github.com/FIFSAK/saubala-back/pkg/store"
 	"github.com/FIFSAK/saubala-back/pkg/web"
 )
@@ -20,6 +21,7 @@ import (
 type Service struct {
 	positions   domain.Repository
 	brands      brand.Repository
+	suppliers   supplier.Repository
 	receipts    receipt.Repository
 	releases    release.Repository
 	contracts   contract.Repository
@@ -29,6 +31,7 @@ type Service struct {
 func NewService(
 	positions domain.Repository,
 	brands brand.Repository,
+	suppliers supplier.Repository,
 	receipts receipt.Repository,
 	releases release.Repository,
 	contracts contract.Repository,
@@ -37,6 +40,7 @@ func NewService(
 	return &Service{
 		positions:   positions,
 		brands:      brands,
+		suppliers:   suppliers,
 		receipts:    receipts,
 		releases:    releases,
 		contracts:   contracts,
@@ -48,6 +52,7 @@ func NewService(
 type CreateInput struct {
 	Name          string
 	BrandID       string
+	SupplierID    string // optional
 	ContractName  string
 	ExpiryDate    time.Time
 	LotNumber     string
@@ -64,6 +69,7 @@ type CreateInput struct {
 type UpdateInput struct {
 	Name          *string
 	BrandID       *string
+	SupplierID    *string
 	ContractName  *string
 	ExpiryDate    *time.Time
 	LotNumber     *string
@@ -74,12 +80,15 @@ type UpdateInput struct {
 }
 
 func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Position, error) {
-	p, err := domain.New(in.Name, in.BrandID, in.ContractName, in.LotNumber,
+	p, err := domain.New(in.Name, in.BrandID, in.SupplierID, in.ContractName, in.LotNumber,
 		in.ExpiryDate, in.PurchasePrice, in.Quantity, in.MassGrams)
 	if err != nil {
 		return nil, web.BadRequest(err.Error())
 	}
 	if err := s.ensureBrandExists(ctx, p.BrandID); err != nil {
+		return nil, err
+	}
+	if err := s.ensureSupplierExists(ctx, p.SupplierID); err != nil {
 		return nil, err
 	}
 
@@ -91,7 +100,8 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Position,
 	}
 
 	if opening > 0 {
-		rec, err := receipt.New(time.Now().UTC(), "opening balance", in.CreatedBy,
+		// The opening receipt inherits the position's supplier.
+		rec, err := receipt.New(time.Now().UTC(), "opening balance", p.SupplierID, 0, in.CreatedBy,
 			[]receipt.Line{{PositionID: p.ID, Quantity: opening}})
 		if err != nil {
 			_ = s.positions.Delete(ctx, p.ID)
@@ -148,6 +158,29 @@ func (s *Service) BrandNames(ctx context.Context, ps []domain.Position) (map[str
 	return names, nil
 }
 
+// SupplierNames batch-loads supplier names for the given positions.
+func (s *Service) SupplierNames(ctx context.Context, ps []domain.Position) (map[string]string, error) {
+	ids := make(map[string]struct{}, len(ps))
+	for i := range ps {
+		if ps[i].SupplierID != "" {
+			ids[ps[i].SupplierID] = struct{}{}
+		}
+	}
+	list := make([]string, 0, len(ids))
+	for id := range ids {
+		list = append(list, id)
+	}
+	suppliers, err := s.suppliers.GetByIDs(ctx, list)
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[string]string, len(suppliers))
+	for i := range suppliers {
+		names[suppliers[i].ID] = suppliers[i].Name
+	}
+	return names, nil
+}
+
 func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*domain.Position, error) {
 	p, err := s.positions.GetByID(ctx, id)
 	if err != nil {
@@ -165,6 +198,12 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*domai
 			return nil, err
 		}
 		p.BrandID = *in.BrandID
+	}
+	if in.SupplierID != nil {
+		if err := s.ensureSupplierExists(ctx, *in.SupplierID); err != nil {
+			return nil, err
+		}
+		p.SupplierID = *in.SupplierID
 	}
 	if in.ContractName != nil {
 		p.ContractName = *in.ContractName
@@ -351,6 +390,21 @@ func (s *Service) ensureBrandExists(ctx context.Context, brandID string) error {
 	if _, err := s.brands.GetByID(ctx, brandID); err != nil {
 		if errors.Is(err, store.ErrorNotFound) {
 			return web.BadRequest("бренд не существует")
+		}
+		return err
+	}
+	return nil
+}
+
+// ensureSupplierExists validates a supplier reference; an empty id is allowed
+// (the supplier link is optional).
+func (s *Service) ensureSupplierExists(ctx context.Context, supplierID string) error {
+	if supplierID == "" {
+		return nil
+	}
+	if _, err := s.suppliers.GetByID(ctx, supplierID); err != nil {
+		if errors.Is(err, store.ErrorNotFound) {
+			return web.BadRequest("поставщик не существует")
 		}
 		return err
 	}

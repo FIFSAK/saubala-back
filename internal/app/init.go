@@ -105,6 +105,8 @@ func (app *App) initializeServices(ctx context.Context) error {
 		service.WithContractService(),
 		service.WithReleaseService(),
 		service.WithSettingsService(),
+		service.WithOrgService(),
+		service.WithSupplierService(),
 		service.WithInvoiceService(),
 	)
 	if err != nil {
@@ -119,9 +121,15 @@ func (app *App) initializeServices(ctx context.Context) error {
 		return err
 	}
 
-	// Seed the organization settings singleton with the customer's defaults.
+	// Seed the settings singleton (invoice defaults) with the customer's values.
 	if err := services.Settings.EnsureDefault(ctx); err != nil {
 		app.logger.Error("settings seed error", zap.Error(err))
+		return err
+	}
+
+	// Seed the customer's firm as the first sender organization.
+	if err := services.Org.EnsureDefault(ctx); err != nil {
+		app.logger.Error("organization seed error", zap.Error(err))
 		return err
 	}
 
@@ -166,6 +174,8 @@ func (app *App) initializeHandlers() error {
 		handler.WithContractHandler(),
 		handler.WithReleaseHandler(),
 		handler.WithSettingsHandler(),
+		handler.WithOrgHandler(),
+		handler.WithSupplierHandler(),
 		handler.WithInvoiceHandler(),
 	)
 	if err != nil {
