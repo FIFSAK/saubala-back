@@ -3,11 +3,13 @@ package repository
 import (
 	"context"
 
+	"github.com/FIFSAK/saubala-back/internal/domain/adjustment"
 	"github.com/FIFSAK/saubala-back/internal/domain/brand"
 	"github.com/FIFSAK/saubala-back/internal/domain/contract"
 	"github.com/FIFSAK/saubala-back/internal/domain/position"
 	"github.com/FIFSAK/saubala-back/internal/domain/receipt"
 	"github.com/FIFSAK/saubala-back/internal/domain/release"
+	"github.com/FIFSAK/saubala-back/internal/domain/settings"
 	"github.com/FIFSAK/saubala-back/internal/domain/user"
 	mongorepo "github.com/FIFSAK/saubala-back/internal/repository/mongo"
 	"github.com/FIFSAK/saubala-back/pkg/store"
@@ -20,12 +22,14 @@ type Configuration func(r *Repositories) error
 type Repositories struct {
 	mongo *store.Mongo
 
-	User     user.Repository
-	Brand    brand.Repository
-	Position position.Repository
-	Receipt  receipt.Repository
-	Contract contract.Repository
-	Release  release.Repository
+	User       user.Repository
+	Brand      brand.Repository
+	Position   position.Repository
+	Receipt    receipt.Repository
+	Contract   contract.Repository
+	Release    release.Repository
+	Adjustment adjustment.Repository
+	Settings   settings.Repository
 }
 
 // New builds the repositories aggregate from the given options.
@@ -62,6 +66,8 @@ func WithMongoStore(ctx context.Context, m *store.Mongo) Configuration {
 		r.Receipt = mongorepo.NewReceiptRepository(db)
 		r.Contract = mongorepo.NewContractRepository(db)
 		r.Release = mongorepo.NewReleaseRepository(db)
+		r.Adjustment = mongorepo.NewAdjustmentRepository(db)
+		r.Settings = mongorepo.NewSettingsRepository(db)
 		return nil
 	}
 }
